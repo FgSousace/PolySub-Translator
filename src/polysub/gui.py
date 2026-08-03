@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -16,6 +17,8 @@ from .video import (
     VIDEO_EXTENSIONS,
     VideoImportResult,
     VideoSubtitleImporter,
+    VideoSubtitleMuxer,
+    fast_mux_output_path,
     format_media_duration,
     translated_video_subtitle_path,
 )
@@ -40,6 +43,8 @@ class PolySubApp(tk.Tk):
         self.document: SRTDocument | None = None
         self.source_path: Path | None = None
         self.media_path: Path | None = None
+        self.translated_subtitle_path: Path | None = None
+        self.translated_target_language: str | None = None
         self._build_style()
         self._build_ui()
 
@@ -177,13 +182,22 @@ class PolySubApp(tk.Tk):
         self.status_var = tk.StringVar(value="Gotowy")
         ttk.Label(progress_frame, textvariable=self.status_var).pack(anchor="w")
 
+        action_frame = ttk.Frame(container)
+        action_frame.pack(fill="x", pady=(12, 0))
+        self.attach_button = ttk.Button(
+            action_frame,
+            text="Dołącz napisy do filmu — szybko",
+            command=self._attach_subtitles,
+            state="disabled",
+        )
+        self.attach_button.pack(side="left")
         self.start_button = ttk.Button(
-            container,
+            action_frame,
             text="Rozpocznij tłumaczenie",
             command=self._start_translation,
             style="Primary.TButton",
         )
-        self.start_button.pack(anchor="e", pady=(12, 0))
+        self.start_button.pack(side="right")
         self._update_api_state()
 
     def _choose_file(self) -> None:
@@ -201,6 +215,9 @@ class PolySubApp(tk.Tk):
         self.document = None
         self.source_path = None
         self.media_path = None
+        self.translated_subtitle_path = None
+        self.translated_target_language = None
+        self.attach_button.configure(state="disabled")
         self.file_var.set(str(selected_path))
 
         if selected_path.suffix.lower() in VIDEO_EXTENSIONS:
@@ -217,6 +234,7 @@ class PolySubApp(tk.Tk):
     def _start_video_import(self, video_path: Path) -> None:
         self.file_button.configure(state="disabled")
         self.start_button.configure(state="disabled")
+        self.attach_button.configure(state="disabled")
         self.status_var.set("Sprawdzanie filmu...")
         self.progress_text.set("Szukanie wbudowanych napisów")
         self.progress_bar.configure(maximum=1)
@@ -319,6 +337,9 @@ class PolySubApp(tk.Tk):
 
         self.start_button.configure(state="disabled")
         self.file_button.configure(state="disabled")
+        self.attach_button.configure(state="disabled")
+        self.translated_subtitle_path = None
+        self.translated_target_language = None
         self.status_var.set("Przygotowywanie silnika...")
         self._set_progress(0, self.document.total_words)
         engine_kind = ENGINE_LABELS[self.engine_var.get()]
@@ -358,11 +379,17 @@ class PolySubApp(tk.Tk):
                 progress=lambda done, total: self.after(0, self._set_progress, done, total),
                 output_path=output if mode is TranslationMode.AUTOMATIC else None,
             )
-            self.after(0, self._translation_finished, result, output, mode)
+            self.after(0, self._translation_finished, result, output, mode, target)
         except Exception as exc:
             self.after(0, self._translation_failed, str(exc))
 
-    def _translation_finished(self, result, output: Path, mode: TranslationMode) -> None:
+    def _translation_finished(
+        self,
+        result,
+        output: Path,
+        mode: TranslationMode,
+        target_language: str,
+    ) -> None:
         self.start_button.configure(state="normal")
         self.file_button.configure(state="normal")
         if mode is TranslationMode.REVIEW:
@@ -376,16 +403,135 @@ class PolySubApp(tk.Tk):
                 result.review_items,
                 output,
                 result.checkpoint_path,
+                on_saved=lambda saved_path: self._translated_subtitle_ready(
+                    saved_path, target_language
+                ),
             )
             return
+        self._translated_subtitle_ready(output, target_language)
         self.status_var.set(f"Gotowe: {output.name}")
-        messagebox.showinfo("Tłumaczenie gotowe", f"Zapisano plik:\n{output}", parent=self)
+        suffix = (
+            "\n\nMożesz teraz użyć przycisku „Dołącz napisy do filmu — szybko”."
+            if self.media_path is not None
+            else ""
+        )
+        messagebox.showinfo(
+            "Tłumaczenie gotowe",
+            f"Zapisano plik:\n{output}{suffix}",
+            parent=self,
+        )
 
     def _translation_failed(self, message: str) -> None:
         self.start_button.configure(state="normal")
         self.file_button.configure(state="normal")
+        self._update_attach_button()
         self.status_var.set("Wystąpił błąd")
         messagebox.showerror("Tłumaczenie nie powiodło się", message, parent=self)
+
+    def _translated_subtitle_ready(self, subtitle_path: Path, target_language: str) -> None:
+        self.translated_subtitle_path = subtitle_path
+        self.translated_target_language = target_language
+        self._update_attach_button()
+
+    def _update_attach_button(self) -> None:
+        ready = (
+            self.media_path is not None
+            and self.translated_subtitle_path is not None
+            and self.translated_subtitle_path.is_file()
+            and self.translated_target_language is not None
+        )
+        self.attach_button.configure(state="normal" if ready else "disabled")
+
+    def _attach_subtitles(self) -> None:
+        if (
+            self.media_path is None
+            or self.translated_subtitle_path is None
+            or self.translated_target_language is None
+        ):
+            messagebox.showwarning(
+                "Brak gotowych napisów",
+                "Najpierw przetłumacz napisy filmu i zapisz wynik.",
+                parent=self,
+            )
+            return
+
+        default_output = fast_mux_output_path(
+            self.media_path,
+            self.translated_target_language,
+        )
+        preferred_type = (
+            [("Film MP4", "*.mp4"), ("Film Matroska", "*.mkv")]
+            if default_output.suffix == ".mp4"
+            else [("Film Matroska", "*.mkv"), ("Film MP4", "*.mp4")]
+        )
+        selected = filedialog.asksaveasfilename(
+            parent=self,
+            title="Zapisz film z dołączonymi napisami",
+            initialdir=str(default_output.parent),
+            initialfile=default_output.name,
+            defaultextension=default_output.suffix,
+            filetypes=preferred_type,
+        )
+        if not selected:
+            return
+
+        self.file_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.attach_button.configure(state="disabled")
+        self.progress_bar.configure(mode="indeterminate")
+        self.progress_bar.start(12)
+        self.progress_text.set("Kopiowanie obrazu i dźwięku bez ponownego kodowania")
+        self.status_var.set("Szybkie dołączanie napisów do filmu...")
+        thread = threading.Thread(
+            target=self._attach_subtitles_worker,
+            args=(Path(selected),),
+            daemon=True,
+        )
+        thread.start()
+
+    def _attach_subtitles_worker(self, output_path: Path) -> None:
+        try:
+            target_language = self.translated_target_language
+            if (
+                self.media_path is None
+                or self.translated_subtitle_path is None
+                or target_language is None
+            ):
+                raise RuntimeError("Brakuje filmu albo gotowych napisów.")
+            output = VideoSubtitleMuxer().mux(
+                self.media_path,
+                self.translated_subtitle_path,
+                target_language=target_language,
+                output_path=output_path,
+                subtitle_title=language_name(target_language),
+            )
+            self.after(0, self._attach_subtitles_finished, output)
+        except Exception as exc:
+            self.after(0, self._attach_subtitles_failed, str(exc))
+
+    def _attach_subtitles_finished(self, output_path: Path) -> None:
+        self._finish_attach_operation()
+        self.status_var.set(f"Film z napisami gotowy: {output_path.name}")
+        messagebox.showinfo(
+            "Film gotowy",
+            "Dołączono przełączaną ścieżkę napisów bez ponownego kodowania obrazu "
+            f"i dźwięku:\n\n{output_path}",
+            parent=self,
+        )
+
+    def _attach_subtitles_failed(self, message: str) -> None:
+        self._finish_attach_operation()
+        self.status_var.set("Nie udało się dołączyć napisów")
+        messagebox.showerror("Dołączanie napisów nie powiodło się", message, parent=self)
+
+    def _finish_attach_operation(self) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
+        if self.document is not None:
+            self._set_progress(self.document.total_words, self.document.total_words)
+        self.file_button.configure(state="normal")
+        self.start_button.configure(state="normal")
+        self._update_attach_button()
 
     def _set_progress(self, processed: int, total: int) -> None:
         self.progress_bar.configure(maximum=max(total, 1))
@@ -415,6 +561,7 @@ class ReviewWindow(tk.Toplevel):
         review_items,
         output_path: Path,
         checkpoint_path: Path | None,
+        on_saved: Callable[[Path], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.title("Weryfikacja tłumaczenia — PolySub")
@@ -424,6 +571,7 @@ class ReviewWindow(tk.Toplevel):
         self.translated = translated
         self.output_path = output_path
         self.checkpoint_path = checkpoint_path
+        self.on_saved = on_saved
         self.issues = {item.cue_position: item for item in review_items}
         self.current_position: int | None = None
         self._build_ui()
@@ -545,6 +693,8 @@ class ReviewWindow(tk.Toplevel):
         self.translated.save(self.output_path)
         if self.checkpoint_path:
             self.checkpoint_path.unlink(missing_ok=True)
+        if self.on_saved:
+            self.on_saved(self.output_path)
         messagebox.showinfo("Zapisano", f"Gotowy plik:\n{self.output_path}", parent=self)
 
     def _save_as(self) -> None:

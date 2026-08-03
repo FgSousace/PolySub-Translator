@@ -12,6 +12,7 @@ from typing import Any
 from .subtitles import SRTCue, SRTDocument, SubtitleFormatError
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
+FAST_MUX_MP4_EXTENSIONS = {".m4v", ".mov", ".mp4"}
 MAX_CUE_CHARACTERS = 78
 MAX_CUE_DURATION = 7.0
 
@@ -21,6 +22,10 @@ ModelFactory = Callable[..., Any]
 
 
 class VideoImportError(RuntimeError):
+    pass
+
+
+class VideoMuxError(RuntimeError):
     pass
 
 
@@ -190,6 +195,112 @@ class VideoSubtitleImporter:
         )
 
 
+class VideoSubtitleMuxer:
+    """Attach an SRT track without re-encoding the video or audio streams."""
+
+    def __init__(self, *, ffmpeg_executable: str | None = None) -> None:
+        self.ffmpeg_executable = ffmpeg_executable
+
+    def mux(
+        self,
+        video_path: str | Path,
+        subtitle_path: str | Path,
+        *,
+        target_language: str,
+        output_path: str | Path | None = None,
+        subtitle_title: str | None = None,
+    ) -> Path:
+        video = Path(video_path)
+        subtitles = Path(subtitle_path)
+        output = Path(output_path) if output_path else fast_mux_output_path(video, target_language)
+
+        if not video.is_file():
+            raise VideoMuxError(f"Nie znaleziono filmu: {video}")
+        if not subtitles.is_file():
+            raise VideoMuxError(f"Nie znaleziono napisów: {subtitles}")
+        if subtitles.suffix.lower() != ".srt":
+            raise VideoMuxError("Szybkie dołączanie obsługuje napisy w formacie SRT.")
+        if output.suffix.lower() not in {".mp4", ".mkv"}:
+            raise VideoMuxError("Film wynikowy musi mieć rozszerzenie .mp4 albo .mkv.")
+        if _same_path(video, output):
+            raise VideoMuxError("Film wynikowy nie może nadpisywać oryginalnego filmu.")
+
+        ffmpeg = self._resolve_ffmpeg()
+        if ffmpeg is None:
+            raise VideoMuxError(
+                'Brakuje FFmpeg. Zainstaluj obsługę wideo: pip install -e ".[video]"'
+            )
+
+        subtitle_codec = "mov_text" if output.suffix.lower() == ".mp4" else "srt"
+        temporary = output.with_name(f".{output.stem}.tmp{output.suffix}")
+        temporary.unlink(missing_ok=True)
+        command = [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video),
+            "-i",
+            str(subtitles),
+            "-map",
+            "0:v?",
+            "-map",
+            "0:a?",
+            "-map",
+            "1:0",
+            "-map_metadata",
+            "0",
+            "-map_chapters",
+            "0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "copy",
+            "-c:s",
+            subtitle_codec,
+            "-metadata:s:s:0",
+            f"language={target_language.lower()}",
+            "-metadata:s:s:0",
+            f"title={subtitle_title or target_language.upper()}",
+        ]
+        command.append(str(temporary))
+
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError as exc:
+            temporary.unlink(missing_ok=True)
+            raise VideoMuxError(f"Nie udało się uruchomić FFmpeg: {exc}") from exc
+
+        if completed.returncode != 0 or not temporary.exists() or temporary.stat().st_size == 0:
+            temporary.unlink(missing_ok=True)
+            details = _process_error(completed.stderr)
+            message = "Nie udało się dołączyć napisów do filmu."
+            if details:
+                message += f"\n\nFFmpeg: {details}"
+            raise VideoMuxError(message)
+
+        temporary.replace(output)
+        return output
+
+    def _resolve_ffmpeg(self) -> str | None:
+        if self.ffmpeg_executable:
+            return self.ffmpeg_executable
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, RuntimeError):
+            return None
+
+
 def extracted_subtitle_path(video_path: str | Path) -> Path:
     video = Path(video_path)
     return video.with_name(f"{video.stem}.extracted.srt")
@@ -203,6 +314,12 @@ def transcribed_subtitle_path(video_path: str | Path) -> Path:
 def translated_video_subtitle_path(video_path: str | Path, target_language: str) -> Path:
     video = Path(video_path)
     return video.with_name(f"{video.stem}.{target_language.lower()}.srt")
+
+
+def fast_mux_output_path(video_path: str | Path, target_language: str) -> Path:
+    video = Path(video_path)
+    suffix = ".mp4" if video.suffix.lower() in FAST_MUX_MP4_EXTENSIONS else ".mkv"
+    return video.with_name(f"{video.stem}.{target_language.lower()}.subtitled{suffix}")
 
 
 def format_media_duration(seconds: float) -> str:
@@ -224,6 +341,18 @@ def _whisper_cache_path() -> Path:
     if local_app_data:
         return Path(local_app_data) / "PolySub" / "models" / "faster-whisper"
     return Path.home() / ".cache" / "polysub" / "faster-whisper"
+
+
+def _same_path(first: Path, second: Path) -> bool:
+    return os.path.normcase(os.path.abspath(first)) == os.path.normcase(os.path.abspath(second))
+
+
+def _process_error(stderr: bytes | str | None) -> str:
+    if isinstance(stderr, bytes):
+        value = stderr.decode("utf-8", errors="replace")
+    else:
+        value = stderr or ""
+    return " ".join(value.strip().split())[-1200:]
 
 
 def _cues_from_segment(segment: Any, *, first_identifier: int) -> list[SRTCue]:

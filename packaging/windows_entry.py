@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def main() -> None:
@@ -18,9 +20,53 @@ def main() -> None:
         import imageio_ffmpeg
         import onnxruntime
 
+        from polysub.video import VideoSubtitleMuxer
+
         ffmpeg_executable = Path(imageio_ffmpeg.get_ffmpeg_exe())
         if not ffmpeg_executable.is_file():
             raise RuntimeError(f"Nie znaleziono FFmpeg: {ffmpeg_executable}")
+
+        with TemporaryDirectory(prefix="polysub-self-test-") as temporary_directory:
+            temporary = Path(temporary_directory)
+            source_video = temporary / "source.mp4"
+            subtitles = temporary / "source.pl.srt"
+            output_video = temporary / "source.pl.subtitled.mp4"
+            subtitles.write_text(
+                "1\n00:00:00,000 --> 00:00:00,800\nTest napisów.\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [
+                    str(ffmpeg_executable),
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=160x90:d=1",
+                    "-c:v",
+                    "mpeg4",
+                    "-an",
+                    str(source_video),
+                ],
+                check=True,
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            result = VideoSubtitleMuxer(
+                ffmpeg_executable=str(ffmpeg_executable)
+            ).mux(
+                source_video,
+                subtitles,
+                target_language="pl",
+                output_path=output_video,
+                subtitle_title="Polski",
+            )
+            if not result.is_file() or result.stat().st_size == 0:
+                raise RuntimeError("Test szybkiego dołączania napisów nie utworzył filmu.")
 
         # Validate the bundled video stack without downloading a speech model.
         _ = (av, ctranslate2, faster_whisper, onnxruntime)

@@ -8,7 +8,7 @@ kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokaln
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.3.0-alpha` — SRT i automatyczny import filmu w aplikacji Windows.
+> Status: `v0.4.0-alpha` — SRT, automatyczny import filmu i szybkie dołączanie napisów.
 
 ## Najważniejsze funkcje
 
@@ -16,6 +16,7 @@ niejasnych fragmentów.
 - dodatkowy import MP4/MKV/MOV/M4V/AVI/WebM bez usuwania obsługi SRT;
 - wyciąganie pierwszej tekstowej ścieżki napisów z filmu;
 - lokalne rozpoznawanie mowy przez Whisper, gdy film nie zawiera napisów;
+- szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
 - lokalny model M2M100 lub DeepL API;
 - licznik `Przetłumaczono 1 428 z 9 732 słów` zamiast samego procentu;
@@ -53,6 +54,8 @@ Dotychczasowy wybór `.srt` działa tak samo jak wcześniej. Dodatkowo można ws
 3. Program wykrywa język utworzonego tekstu.
 4. Użytkownik wybiera język docelowy i zwykły tryb tłumaczenia.
 5. Wynik zostaje zapisany obok filmu, np. jako `film.pl.srt`.
+6. Opcjonalnie przycisk **Dołącz napisy do filmu — szybko** tworzy gotowy film ze ścieżką
+   napisów.
 
 Do ekstrakcji używany jest FFmpeg dołączony do aplikacji, więc nie trzeba instalować go ręcznie.
 Rozpoznawanie mowy działa lokalnie i oferuje wariant **small** (szybszy) oraz **medium**
@@ -61,6 +64,16 @@ wariantu i pozostaje w pamięci podręcznej Windows.
 
 > Whisper rozpoznaje wypowiedziane słowa i ich czas, ale nie zna automatycznie imion ani płci
 > rozmówców. Do takich przypadków nadal służą informacje o postaciach i tryb weryfikacji.
+
+### Szybkie dołączanie napisów do filmu
+
+PolySub nie przelicza ponownie obrazu ani dźwięku. FFmpeg kopiuje istniejące strumienie 1:1 i
+dodaje przełączaną ścieżkę napisów. Dlatego karta graficzna nie jest potrzebna, jakość filmu się
+nie zmienia, a operacja jest ograniczona głównie szybkością odczytu i zapisu dysku. Zależnie od
+kontenera powstaje np. `film.pl.subtitled.mp4` albo `film.pl.subtitled.mkv`.
+
+Napisy można włączać i wyłączać w odtwarzaczu. Nie są one wypalane na stałe w każdej klatce — takie
+wypalanie wymagałoby ponownego kodowania filmu i trwałoby wyraźnie dłużej.
 
 ## Najprostsza instalacja na Windows
 
@@ -140,8 +153,10 @@ polysub-gui
 5. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
 6. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
 7. Rozpocznij tłumaczenie.
+8. Dla filmu możesz następnie kliknąć **Dołącz napisy do filmu — szybko** i wskazać plik wynikowy.
 
-Wynik otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw otwarty edytor.
+Wynik tłumaczenia otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw
+otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowych napisów.
 
 ### Terminal
 
@@ -158,6 +173,9 @@ polysub film.srt --target pl --engine deepl --mode review --context-file postaci
 
 # Cały film: wyciągnięcie napisów lub transkrypcja audio, a następnie tłumaczenie
 polysub film.mp4 --target pl --engine local --speech-model medium
+
+# To samo oraz szybkie utworzenie filmu z przełączaną polską ścieżką napisów
+polysub film.mp4 --target pl --engine local --attach-to-video
 ```
 
 Uruchomienie `polysub` bez parametrów otwiera GUI.
@@ -179,8 +197,9 @@ tekst źródłowy nie zawiera wymaganej informacji.
 ## Bezpieczeństwo pliku
 
 - oryginalny plik nie jest modyfikowany;
-- oryginalny film nigdy nie jest modyfikowany ani kopiowany;
+- oryginalny film nigdy nie jest modyfikowany ani nadpisywany;
 - napisy wyciągnięte lub rozpoznane z filmu są zapisywane w osobnym pliku roboczym `.srt`;
+- film z dołączonymi napisami zawsze jest zapisywany jako osobny plik `.mp4` albo `.mkv`;
 - struktura jest sprawdzana przed zapisem;
 - niedokończone zadanie trafia do pliku `*.srt.polysub.json`;
 - plik awaryjny nie zawiera klucza API i jest usuwany po ukończeniu tłumaczenia;
@@ -218,7 +237,7 @@ src/polysub/
 - słownik nazw i terminów zapisywany per projekt;
 - profile postaci przypisywane do konkretnych rozmówców;
 - pamięć zaakceptowanych tłumaczeń;
-- opcjonalne dołączanie gotowych napisów z powrotem do MKV/MP4;
+- opcjonalne wypalanie napisów na stałe z akceleracją GPU;
 - podpis cyfrowy instalatora Windows certyfikatem code-signing.
 
 ## Licencja

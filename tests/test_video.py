@@ -1,7 +1,12 @@
 from types import SimpleNamespace
 
+import pytest
+
 from polysub.video import (
+    VideoMuxError,
     VideoSubtitleImporter,
+    VideoSubtitleMuxer,
+    fast_mux_output_path,
     format_media_duration,
     translated_video_subtitle_path,
 )
@@ -85,5 +90,92 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
 
 def test_video_output_name_and_readable_duration(tmp_path) -> None:
     assert translated_video_subtitle_path(tmp_path / "film.mp4", "PL") == tmp_path / "film.pl.srt"
+    assert fast_mux_output_path(tmp_path / "film.mp4", "PL") == (
+        tmp_path / "film.pl.subtitled.mp4"
+    )
+    assert fast_mux_output_path(tmp_path / "film.webm", "PL") == (
+        tmp_path / "film.pl.subtitled.mkv"
+    )
     assert format_media_duration(65) == "1 min 05 s"
     assert format_media_duration(3661) == "1 godz. 01 min 01 s"
+
+
+def test_fast_mux_copies_video_and_audio_without_reencoding(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "movie.mp4"
+    video.write_bytes(b"original video")
+    subtitles = tmp_path / "movie.pl.srt"
+    subtitles.write_text(SAMPLE_SRT, encoding="utf-8")
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        temporary = command[-1]
+        with open(temporary, "wb") as handle:
+            handle.write(b"muxed video")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr("polysub.video.subprocess.run", fake_run)
+    output = VideoSubtitleMuxer(ffmpeg_executable="ffmpeg").mux(
+        video,
+        subtitles,
+        target_language="pl",
+        subtitle_title="Polski",
+    )
+
+    command = commands[0]
+    assert output == tmp_path / "movie.pl.subtitled.mp4"
+    assert output.read_bytes() == b"muxed video"
+    assert video.read_bytes() == b"original video"
+    assert command[command.index("-c:v") + 1] == "copy"
+    assert command[command.index("-c:a") + 1] == "copy"
+    assert command[command.index("-c:s") + 1] == "mov_text"
+    assert "title=Polski" in command
+
+
+def test_fast_mux_uses_mkv_for_other_video_containers(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "movie.webm"
+    video.write_bytes(b"video")
+    subtitles = tmp_path / "movie.pl.srt"
+    subtitles.write_text(SAMPLE_SRT, encoding="utf-8")
+    commands = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        with open(command[-1], "wb") as handle:
+            handle.write(b"muxed")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr("polysub.video.subprocess.run", fake_run)
+    output = VideoSubtitleMuxer(ffmpeg_executable="ffmpeg").mux(
+        video,
+        subtitles,
+        target_language="pl",
+    )
+
+    command = commands[0]
+    assert output.suffix == ".mkv"
+    assert command[command.index("-c:s") + 1] == "srt"
+
+
+def test_fast_mux_removes_partial_file_when_ffmpeg_fails(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "movie.mp4"
+    video.write_bytes(b"video")
+    subtitles = tmp_path / "movie.pl.srt"
+    subtitles.write_text(SAMPLE_SRT, encoding="utf-8")
+
+    def fake_run(command, **_kwargs):
+        with open(command[-1], "wb") as handle:
+            handle.write(b"partial")
+        return SimpleNamespace(returncode=1, stderr=b"unsupported stream")
+
+    monkeypatch.setattr("polysub.video.subprocess.run", fake_run)
+
+    with pytest.raises(VideoMuxError, match="unsupported stream"):
+        VideoSubtitleMuxer(ffmpeg_executable="ffmpeg").mux(
+            video,
+            subtitles,
+            target_language="pl",
+        )
+
+    assert not (tmp_path / "movie.pl.subtitled.mp4").exists()
+    assert not (tmp_path / ".movie.pl.subtitled.tmp.mp4").exists()

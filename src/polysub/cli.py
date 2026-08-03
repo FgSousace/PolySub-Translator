@@ -13,7 +13,10 @@ from .subtitles import SRTDocument, SubtitleFormatError, default_output_path
 from .video import (
     VIDEO_EXTENSIONS,
     VideoImportError,
+    VideoMuxError,
     VideoSubtitleImporter,
+    VideoSubtitleMuxer,
+    fast_mux_output_path,
     format_media_duration,
     translated_video_subtitle_path,
 )
@@ -51,6 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("small", "medium"),
         default="medium",
         help="Model Whisper używany tylko wtedy, gdy film nie ma tekstowych napisów",
+    )
+    parser.add_argument(
+        "--attach-to-video",
+        action="store_true",
+        help="Po tłumaczeniu szybko dołącz SRT do filmu bez ponownego kodowania",
+    )
+    parser.add_argument(
+        "--video-output",
+        type=Path,
+        help="Opcjonalna ścieżka filmu .mp4 lub .mkv z dołączonymi napisami",
     )
     parser.add_argument("--gui", action="store_true", help="Uruchom interfejs graficzny")
     return parser
@@ -125,6 +138,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Gotowe: {output}")
         if result.review_items:
             print(f"Oznaczono do kontroli: {len(result.review_items)} kwestii")
+        if args.attach_to_video:
+            if media_path is None:
+                raise VideoMuxError("Opcja --attach-to-video wymaga filmu jako pliku wejściowego.")
+            video_output = args.video_output or fast_mux_output_path(media_path, target)
+            print("Dołączanie napisów bez ponownego kodowania obrazu i dźwięku...")
+            attached = VideoSubtitleMuxer().mux(
+                media_path,
+                output,
+                target_language=target,
+                output_path=video_output,
+            )
+            print(f"Film z napisami: {attached}")
         return 0
     except (
         OSError,
@@ -132,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         LanguageDetectionError,
         TranslationEngineError,
         VideoImportError,
+        VideoMuxError,
     ) as exc:
         print(f"Błąd: {exc}", file=sys.stderr)
         return 1
