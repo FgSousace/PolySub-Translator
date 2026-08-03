@@ -10,14 +10,21 @@ from .engines import DeepLEngine, M2M100Engine, TranslationEngineError
 from .models import TranslationMode
 from .service import TranslationOptions, TranslationService
 from .subtitles import SRTDocument, SubtitleFormatError, default_output_path
+from .video import (
+    VIDEO_EXTENSIONS,
+    VideoImportError,
+    VideoSubtitleImporter,
+    format_media_duration,
+    translated_video_subtitle_path,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="polysub",
-        description="Automatycznie wykrywa język i tłumaczy napisy SRT.",
+        description="Automatycznie wykrywa język i tłumaczy napisy SRT albo film.",
     )
-    parser.add_argument("input", nargs="?", type=Path, help="Plik wejściowy .srt")
+    parser.add_argument("input", nargs="?", type=Path, help="Plik wejściowy .srt lub wideo")
     parser.add_argument("--target", "-t", help="Kod języka docelowego, np. pl")
     parser.add_argument("--source", "-s", default="auto", help="Kod źródłowy lub auto")
     parser.add_argument(
@@ -39,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Plik TXT z informacjami o postaciach, płci i preferowanej terminologii",
     )
     parser.add_argument("--no-resume", action="store_true", help="Nie używaj zapisu awaryjnego")
+    parser.add_argument(
+        "--speech-model",
+        choices=("small", "medium"),
+        default="medium",
+        help="Model Whisper używany tylko wtedy, gdy film nie ma tekstowych napisów",
+    )
     parser.add_argument("--gui", action="store_true", help="Uruchom interfejs graficzny")
     return parser
 
@@ -53,7 +66,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        document = SRTDocument.load(args.input)
+        media_path: Path | None = None
+        if args.input.suffix.lower() in VIDEO_EXTENSIONS:
+            media_path = args.input
+            imported = VideoSubtitleImporter(model_size=args.speech_model).import_video(
+                args.input,
+                status=lambda message: print(message),
+                progress=_console_media_progress,
+            )
+            print()
+            document = imported.document
+            print(f"Napisy robocze: {imported.subtitle_path}")
+        else:
+            document = SRTDocument.load(args.input)
         detected = detect_language(document.combined_text)
         source = detected.code if args.source == "auto" else args.source.lower()
         print(
@@ -68,7 +93,11 @@ def main(argv: list[str] | None = None) -> int:
             context_notes = args.context_file.read_text(encoding="utf-8")
         engine = _create_engine(args.engine)
         mode = TranslationMode(args.mode)
-        output = args.output or default_output_path(args.input, target)
+        output = args.output or (
+            translated_video_subtitle_path(media_path, target)
+            if media_path is not None
+            else default_output_path(args.input, target)
+        )
         service = TranslationService(engine)
         options = TranslationOptions(
             source_language=source,
@@ -97,7 +126,13 @@ def main(argv: list[str] | None = None) -> int:
         if result.review_items:
             print(f"Oznaczono do kontroli: {len(result.review_items)} kwestii")
         return 0
-    except (OSError, SubtitleFormatError, LanguageDetectionError, TranslationEngineError) as exc:
+    except (
+        OSError,
+        SubtitleFormatError,
+        LanguageDetectionError,
+        TranslationEngineError,
+        VideoImportError,
+    ) as exc:
         print(f"Błąd: {exc}", file=sys.stderr)
         return 1
 
@@ -124,6 +159,15 @@ def _ask_target() -> str:
 
 def _console_progress(processed: int, total: int) -> None:
     print(f"\rPrzetłumaczono {processed:,} z {total:,} słów".replace(",", " "), end="", flush=True)
+
+
+def _console_media_progress(processed: float, total: float) -> None:
+    print(
+        "\rRozpoznano "
+        f"{format_media_duration(processed)} z {format_media_duration(total)} nagrania",
+        end="",
+        flush=True,
+    )
 
 
 def _review_interactively(result) -> None:

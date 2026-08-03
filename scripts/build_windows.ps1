@@ -12,7 +12,7 @@ if (-not $SkipDependencyInstall) {
         throw "Nie udało się zaktualizować pip."
     }
 
-    python -m pip install -e ".[local,fasttext,build]"
+    python -m pip install -e ".[local,fasttext,video,build]"
     if ($LASTEXITCODE -ne 0) {
         throw "Nie udało się zainstalować zależności do budowania."
     }

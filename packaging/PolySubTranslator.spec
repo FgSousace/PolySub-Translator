@@ -1,13 +1,34 @@
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_data_files,
+    collect_submodules,
+    copy_metadata,
+)
 
 
 PROJECT_ROOT = Path(SPECPATH).parent
 
-datas = []
+datas = [
+    (str(PROJECT_ROOT / "LICENSE"), "."),
+    (str(PROJECT_ROOT / "THIRD_PARTY_NOTICES.md"), "."),
+]
+binaries = []
+hiddenimports = [
+    "fasttext",
+    "numpy",
+    "sentencepiece",
+    "torch",
+]
 for package in ("transformers", "huggingface_hub", "tokenizers", "safetensors"):
     datas += collect_data_files(package)
+
+for package in ("av", "ctranslate2", "faster_whisper", "imageio_ffmpeg"):
+    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    datas += package_datas
+    binaries += package_binaries
+    hiddenimports += package_hiddenimports
 
 for distribution in (
     "polysub-translator",
@@ -18,6 +39,11 @@ for distribution in (
     "huggingface-hub",
     "sentencepiece",
     "fasttext-wheel",
+    "av",
+    "ctranslate2",
+    "faster-whisper",
+    "imageio-ffmpeg",
+    "onnxruntime",
 ):
     try:
         datas += copy_metadata(distribution)
@@ -26,19 +52,13 @@ for distribution in (
         # Their code is still collected by Analysis and the standard hooks.
         pass
 
-hiddenimports = [
-    "fasttext",
-    "numpy",
-    "sentencepiece",
-    "torch",
-]
 hiddenimports += collect_submodules("fasttext")
 hiddenimports += collect_submodules("transformers.models.m2m_100")
 
 a = Analysis(
     [str(PROJECT_ROOT / "packaging" / "windows_entry.py")],
     pathex=[str(PROJECT_ROOT / "src")],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

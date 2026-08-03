@@ -3,15 +3,19 @@
 **Context-aware multilingual subtitle translator with automatic language detection and
 interactive review.**
 
-PolySub tłumaczy kompletne pliki `.srt`, zachowując numery kwestii, timestampy i podstawowe
-formatowanie. Użytkownik wybiera silnik lokalny albo DeepL API oraz jeden z dwóch trybów:
-szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją niejasnych fragmentów.
+PolySub tłumaczy kompletne pliki `.srt` albo sam przygotowuje napisy z filmu, zachowując numery
+kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokalny albo DeepL API
+oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
+niejasnych fragmentów.
 
-> Status: `v0.2.0-alpha` — aplikacja SRT z automatycznym instalatorem Windows.
+> Status: `v0.3.0-alpha` — SRT i automatyczny import filmu w aplikacji Windows.
 
 ## Najważniejsze funkcje
 
 - automatyczne wykrywanie języka całego pliku;
+- dodatkowy import MP4/MKV/MOV/M4V/AVI/WebM bez usuwania obsługi SRT;
+- wyciąganie pierwszej tekstowej ścieżki napisów z filmu;
+- lokalne rozpoznawanie mowy przez Whisper, gdy film nie zawiera napisów;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
 - lokalny model M2M100 lub DeepL API;
 - licznik `Przetłumaczono 1 428 z 9 732 słów` zamiast samego procentu;
@@ -39,6 +43,24 @@ szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją nieja
 
 Kod projektu ma licencję MIT. Model `facebook/m2m100_418M` jest pobierany osobno z Hugging Face
 i również jest udostępniany na licencji MIT. PolySub nie dołącza modelu ani kluczy API do repozytorium.
+
+## Dodatkowa funkcja: film zamiast gotowego SRT
+
+Dotychczasowy wybór `.srt` działa tak samo jak wcześniej. Dodatkowo można wskazać cały film:
+
+1. PolySub próbuje wyciągnąć pierwszą tekstową ścieżkę napisów do `film.extracted.srt`.
+2. Jeżeli film nie ma tekstowych napisów, Whisper słucha audio i tworzy `film.transcribed.srt`.
+3. Program wykrywa język utworzonego tekstu.
+4. Użytkownik wybiera język docelowy i zwykły tryb tłumaczenia.
+5. Wynik zostaje zapisany obok filmu, np. jako `film.pl.srt`.
+
+Do ekstrakcji używany jest FFmpeg dołączony do aplikacji, więc nie trzeba instalować go ręcznie.
+Rozpoznawanie mowy działa lokalnie i oferuje wariant **small** (szybszy) oraz **medium**
+(dokładniejszy, ustawiony domyślnie). Model Whisper pobiera się tylko przy pierwszym użyciu danego
+wariantu i pozostaje w pamięci podręcznej Windows.
+
+> Whisper rozpoznaje wypowiedziane słowa i ich czas, ale nie zna automatycznie imion ani płci
+> rozmówców. Do takich przypadków nadal służą informacje o postaciach i tryb weryfikacji.
 
 ## Najprostsza instalacja na Windows
 
@@ -84,22 +106,24 @@ python -m pip install --upgrade pip
 ### Wariant lokalny
 
 ```powershell
-pip install -e ".[local,fasttext]"
+pip install -e ".[local,fasttext,video]"
 polysub-gui
 ```
 
 Podczas pierwszego tłumaczenia zostanie pobrany model M2M100. Opcjonalny fastText zwiększa zakres
-automatycznego rozpoznawania do 176 języków; bez niego działa lekki mechanizm zapasowy.
+automatycznego rozpoznawania do 176 języków; bez niego działa lekki mechanizm zapasowy. Dodatek
+`video` zawiera obsługę FFmpeg i lokalnej transkrypcji Whisper.
 
 ### Wariant DeepL API
 
 ```powershell
-pip install -e .
+pip install -e ".[video,fasttext]"
 polysub-gui
 ```
 
 Klucz można wpisać bezpośrednio w aplikacji — jest używany tylko w bieżącej sesji i nie jest
-zapisywany. Alternatywnie ustaw `DEEPL_API_KEY` jako zmienną środowiskową.
+zapisywany. Alternatywnie ustaw `DEEPL_API_KEY` jako zmienną środowiskową. Jeśli nie potrzebujesz
+funkcji filmu, wystarczy podstawowe `pip install -e .`.
 
 ## Użycie
 
@@ -109,12 +133,13 @@ zapisywany. Alternatywnie ustaw `DEEPL_API_KEY` jako zmienną środowiskową.
 polysub-gui
 ```
 
-1. Wybierz plik SRT.
-2. Sprawdź automatycznie wykryty język i wybierz język docelowy.
-3. Wybierz lokalny model albo DeepL API.
-4. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
-5. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
-6. Rozpocznij tłumaczenie.
+1. Wybierz plik SRT albo film. Obsługa filmu jest funkcją dodatkową.
+2. Dla filmu bez napisów wybierz szybszy lub dokładniejszy wariant Whisper.
+3. Sprawdź automatycznie wykryty język i wybierz język docelowy.
+4. Wybierz lokalny model albo DeepL API.
+5. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
+6. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
+7. Rozpocznij tłumaczenie.
 
 Wynik otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw otwarty edytor.
 
@@ -130,6 +155,9 @@ polysub film.srt --target pl --engine deepl --mode review
 
 # Informacje o postaciach z pliku tekstowego
 polysub film.srt --target pl --engine deepl --mode review --context-file postacie.txt
+
+# Cały film: wyciągnięcie napisów lub transkrypcja audio, a następnie tłumaczenie
+polysub film.mp4 --target pl --engine local --speech-model medium
 ```
 
 Uruchomienie `polysub` bez parametrów otwiera GUI.
@@ -151,6 +179,8 @@ tekst źródłowy nie zawiera wymaganej informacji.
 ## Bezpieczeństwo pliku
 
 - oryginalny plik nie jest modyfikowany;
+- oryginalny film nigdy nie jest modyfikowany ani kopiowany;
+- napisy wyciągnięte lub rozpoznane z filmu są zapisywane w osobnym pliku roboczym `.srt`;
 - struktura jest sprawdzana przed zapisem;
 - niedokończone zadanie trafia do pliku `*.srt.polysub.json`;
 - plik awaryjny nie zawiera klucza API i jest usuwany po ukończeniu tłumaczenia;
@@ -176,6 +206,7 @@ src/polysub/
 ├── gui.py         # aplikacja desktopowa
 ├── service.py     # tłumaczenie, kontekst, postęp i wznowienie
 ├── subtitles.py   # parser oraz walidacja SRT
+├── video.py       # FFmpeg, wbudowane napisy i lokalna transkrypcja Whisper
 ├── detector.py    # automatyczne wykrywanie języka
 └── review.py      # wyszukiwanie fragmentów wymagających kontroli
 ```
@@ -187,9 +218,10 @@ src/polysub/
 - słownik nazw i terminów zapisywany per projekt;
 - profile postaci przypisywane do konkretnych rozmówców;
 - pamięć zaakceptowanych tłumaczeń;
-- dołączanie napisów do MKV/MP4 przez FFmpeg;
+- opcjonalne dołączanie gotowych napisów z powrotem do MKV/MP4;
 - podpis cyfrowy instalatora Windows certyfikatem code-signing.
 
 ## Licencja
 
-[MIT](LICENSE)
+[MIT](LICENSE). Informacje o bibliotekach i plikach wykonywalnych dołączanych do wersji Windows są
+zebrane w [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

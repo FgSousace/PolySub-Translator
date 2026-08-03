@@ -12,10 +12,22 @@ from .languages import language_name, language_options, parse_language_option
 from .models import TranslationMode
 from .service import TranslationOptions, TranslationService
 from .subtitles import SRTDocument, default_output_path
+from .video import (
+    VIDEO_EXTENSIONS,
+    VideoImportResult,
+    VideoSubtitleImporter,
+    format_media_duration,
+    translated_video_subtitle_path,
+)
 
 ENGINE_LABELS = {
     "Lokalny AI (M2M100)": "local",
     "DeepL API": "deepl",
+}
+
+SPEECH_MODEL_LABELS = {
+    "Szybsze — Whisper small": "small",
+    "Dokładniejsze — Whisper medium": "medium",
 }
 
 
@@ -23,10 +35,11 @@ class PolySubApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("PolySub Translator")
-        self.geometry("920x700")
-        self.minsize(780, 620)
+        self.geometry("920x730")
+        self.minsize(780, 650)
         self.document: SRTDocument | None = None
         self.source_path: Path | None = None
+        self.media_path: Path | None = None
         self._build_style()
         self._build_ui()
 
@@ -49,13 +62,29 @@ class PolySubApp(tk.Tk):
             text="Wykrywa język, tłumaczy napisy i nie zmienia timestampów.",
         ).pack(anchor="w", pady=(2, 20))
 
-        file_frame = ttk.LabelFrame(container, text="1. Plik napisów", padding=14)
+        file_frame = ttk.LabelFrame(container, text="1. Napisy lub film", padding=14)
         file_frame.pack(fill="x")
+        file_frame.columnconfigure(0, weight=1)
         self.file_var = tk.StringVar(value="Nie wybrano pliku")
-        ttk.Label(file_frame, textvariable=self.file_var).pack(side="left", fill="x", expand=True)
-        ttk.Button(file_frame, text="Wybierz plik SRT", command=self._choose_file).pack(
-            side="right"
+        ttk.Label(file_frame, textvariable=self.file_var, wraplength=650).grid(
+            row=0, column=0, sticky="ew"
         )
+        self.file_button = ttk.Button(
+            file_frame, text="Wybierz SRT lub film", command=self._choose_file
+        )
+        self.file_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
+        ttk.Label(
+            file_frame,
+            text="Gdy film nie ma napisów:",
+        ).grid(row=1, column=0, sticky="e", pady=(10, 0), padx=(0, 8))
+        self.speech_model_var = tk.StringVar(value="Dokładniejsze — Whisper medium")
+        ttk.Combobox(
+            file_frame,
+            textvariable=self.speech_model_var,
+            values=list(SPEECH_MODEL_LABELS),
+            state="readonly",
+            width=32,
+        ).grid(row=1, column=1, sticky="e", pady=(10, 0))
 
         language_frame = ttk.LabelFrame(container, text="2. Języki", padding=14)
         language_frame.pack(fill="x", pady=12)
@@ -159,25 +188,110 @@ class PolySubApp(tk.Tk):
 
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Wybierz napisy", filetypes=[("Napisy SubRip", "*.srt"), ("Wszystkie pliki", "*")]
+            title="Wybierz napisy lub film",
+            filetypes=[
+                ("Napisy SubRip", "*.srt"),
+                ("Pliki wideo", "*.mp4 *.m4v *.mkv *.mov *.avi *.webm"),
+                ("Wszystkie pliki", "*"),
+            ],
         )
         if not selected:
             return
+        selected_path = Path(selected)
+        self.document = None
+        self.source_path = None
+        self.media_path = None
+        self.file_var.set(str(selected_path))
+
+        if selected_path.suffix.lower() in VIDEO_EXTENSIONS:
+            self._start_video_import(selected_path)
+            return
         try:
-            document = SRTDocument.load(selected)
+            document = SRTDocument.load(selected_path)
             detected = detect_language(document.combined_text)
         except Exception as exc:
             messagebox.showerror("Nie można wczytać pliku", str(exc), parent=self)
             return
+        self._document_ready(document, selected_path, detected)
+
+    def _start_video_import(self, video_path: Path) -> None:
+        self.file_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.status_var.set("Sprawdzanie filmu...")
+        self.progress_text.set("Szukanie wbudowanych napisów")
+        self.progress_bar.configure(maximum=1)
+        self.progress_var.set(0)
+        model_size = SPEECH_MODEL_LABELS[self.speech_model_var.get()]
+        thread = threading.Thread(
+            target=self._video_import_worker,
+            args=(video_path, model_size),
+            daemon=True,
+        )
+        thread.start()
+
+    def _video_import_worker(self, video_path: Path, model_size: str) -> None:
+        try:
+            importer = VideoSubtitleImporter(model_size=model_size)
+            result = importer.import_video(
+                video_path,
+                status=lambda message: self.after(0, self.status_var.set, message),
+                progress=lambda done, total: self.after(
+                    0, self._set_media_progress, done, total
+                ),
+            )
+            detected = detect_language(result.document.combined_text)
+            self.after(0, self._video_import_finished, video_path, result, detected)
+        except Exception as exc:
+            self.after(0, self._video_import_failed, str(exc))
+
+    def _video_import_finished(
+        self,
+        video_path: Path,
+        result: VideoImportResult,
+        detected,
+    ) -> None:
+        self.media_path = video_path
+        method = (
+            "Wyciągnięto wbudowane napisy"
+            if result.method == "embedded"
+            else "Utworzono napisy z rozpoznanej mowy"
+        )
+        self._document_ready(
+            result.document,
+            result.subtitle_path,
+            detected,
+            file_label=f"{video_path.name}  →  {result.subtitle_path.name}",
+            status=f"{method}: {result.subtitle_path.name}",
+        )
+        self.file_button.configure(state="normal")
+
+    def _video_import_failed(self, message: str) -> None:
+        self.file_button.configure(state="normal")
+        self.start_button.configure(state="normal")
+        self.status_var.set("Nie udało się przygotować filmu")
+        self.progress_text.set("Nie utworzono napisów")
+        messagebox.showerror("Import filmu nie powiódł się", message, parent=self)
+
+    def _document_ready(
+        self,
+        document: SRTDocument,
+        source_path: Path,
+        detected,
+        *,
+        file_label: str | None = None,
+        status: str = "Napisy gotowe do tłumaczenia",
+    ) -> None:
         self.document = document
-        self.source_path = Path(selected)
-        self.file_var.set(str(self.source_path))
+        self.source_path = source_path
+        self.file_var.set(file_label or str(source_path))
         self.source_var.set(f"{detected.name} ({detected.code})")
         self.detected_var.set(
             f"Wykryto: {detected.name} • pewność {detected.confidence:.0%} • "
             f"{document.total_words:,} słów".replace(",", " ")
         )
         self._set_progress(0, document.total_words)
+        self.status_var.set(status)
+        self.start_button.configure(state="normal")
 
     def _update_api_state(self) -> None:
         state = "normal" if ENGINE_LABELS[self.engine_var.get()] == "deepl" else "disabled"
@@ -185,7 +299,9 @@ class PolySubApp(tk.Tk):
 
     def _start_translation(self) -> None:
         if self.document is None or self.source_path is None:
-            messagebox.showwarning("Brak pliku", "Najpierw wybierz plik SRT.", parent=self)
+            messagebox.showwarning(
+                "Brak pliku", "Najpierw wybierz plik SRT albo film.", parent=self
+            )
             return
         source = parse_language_option(self.source_var.get())
         target = parse_language_option(self.target_var.get())
@@ -202,6 +318,7 @@ class PolySubApp(tk.Tk):
             return
 
         self.start_button.configure(state="disabled")
+        self.file_button.configure(state="disabled")
         self.status_var.set("Przygotowywanie silnika...")
         self._set_progress(0, self.document.total_words)
         engine_kind = ENGINE_LABELS[self.engine_var.get()]
@@ -234,7 +351,7 @@ class PolySubApp(tk.Tk):
             )
             service = TranslationService(engine)
             self.after(0, self.status_var.set, f"Tłumaczenie przez {engine.display_name}...")
-            output = default_output_path(self.source_path, target)
+            output = self._translation_output_path(target)
             result = service.translate(
                 self.document,
                 options,
@@ -247,6 +364,7 @@ class PolySubApp(tk.Tk):
 
     def _translation_finished(self, result, output: Path, mode: TranslationMode) -> None:
         self.start_button.configure(state="normal")
+        self.file_button.configure(state="normal")
         if mode is TranslationMode.REVIEW:
             self.status_var.set(
                 f"Tłumaczenie gotowe — {len(result.review_items)} kwestii oznaczono."
@@ -265,6 +383,7 @@ class PolySubApp(tk.Tk):
 
     def _translation_failed(self, message: str) -> None:
         self.start_button.configure(state="normal")
+        self.file_button.configure(state="normal")
         self.status_var.set("Wystąpił błąd")
         messagebox.showerror("Tłumaczenie nie powiodło się", message, parent=self)
 
@@ -272,6 +391,19 @@ class PolySubApp(tk.Tk):
         self.progress_bar.configure(maximum=max(total, 1))
         self.progress_var.set(processed)
         self.progress_text.set(f"Przetłumaczono {processed:,} z {total:,} słów".replace(",", " "))
+
+    def _set_media_progress(self, processed: float, total: float) -> None:
+        self.progress_bar.configure(maximum=max(total, 1.0))
+        self.progress_var.set(int(processed))
+        self.progress_text.set(
+            "Rozpoznano "
+            f"{format_media_duration(processed)} z {format_media_duration(total)} nagrania"
+        )
+
+    def _translation_output_path(self, target_language: str) -> Path:
+        if self.media_path is not None:
+            return translated_video_subtitle_path(self.media_path, target_language)
+        return default_output_path(self.source_path, target_language)
 
 
 class ReviewWindow(tk.Toplevel):
