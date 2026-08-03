@@ -7,7 +7,7 @@ PolySub tłumaczy kompletne pliki `.srt`, zachowując numery kwestii, timestampy
 formatowanie. Użytkownik wybiera silnik lokalny albo DeepL API oraz jeden z dwóch trybów:
 szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją niejasnych fragmentów.
 
-> Status: `v0.1.0-alpha` — pierwsza działająca wersja obsługująca format SRT.
+> Status: `v0.2.0-alpha` — aplikacja SRT z automatycznym instalatorem Windows.
 
 ## Najważniejsze funkcje
 
@@ -40,7 +40,35 @@ szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją nieja
 Kod projektu ma licencję MIT. Model `facebook/m2m100_418M` jest pobierany osobno z Hugging Face
 i również jest udostępniany na licencji MIT. PolySub nie dołącza modelu ani kluczy API do repozytorium.
 
-## Instalacja na Windows
+## Najprostsza instalacja na Windows
+
+Nie musisz instalować Pythona ani wpisywać komend. Gotowy pakiet Windows powstaje automatycznie
+w zakładce **Actions → Build Windows Installer**:
+
+1. Otwórz ostatni udany build oznaczony zielonym znakiem.
+2. Pobierz na dole artefakt `PolySub-Translator-Windows`.
+3. Rozpakuj pobrany ZIP i uruchom `PolySub-Translator-Setup.exe`.
+4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i zakończ instalację.
+
+Przy kolejnych uruchomieniach klikaj skrót **PolySub Translator** na pulpicie albo w menu Start.
+Instalator działa dla bieżącego użytkownika i nie wymaga uprawnień administratora.
+
+> Windows może przy pierwszym uruchomieniu pokazać ostrzeżenie SmartScreen, ponieważ projekt nie ma
+> jeszcze płatnego certyfikatu podpisu kodu. Kod instalatora i cały proces budowania są publiczne.
+
+### Pierwsze tłumaczenie lokalne
+
+Plik programu `.exe` zawiera silnik potrzebny do uruchomienia aplikacji, ale nie zawiera dużego
+modelu językowego. Przy pierwszym użyciu opcji **Lokalny AI (M2M100)** aplikacja pobierze około 2 GB.
+Może to potrwać kilka lub kilkanaście minut. Model zostaje w pamięci podręcznej Windows, więc przy
+następnych uruchomieniach i tłumaczeniach nie jest pobierany ponownie.
+
+### Wersja przenośna
+
+Ten sam artefakt zawiera `PolySub-Translator-Portable.zip`. Po rozpakowaniu można uruchomić
+`PolySubTranslator\PolySubTranslator.exe` bez instalacji, ale wersja przenośna nie tworzy skrótu.
+
+## Instalacja z kodu źródłowego na Windows
 
 Wymagany jest Python 3.10 lub nowszy.
 
@@ -136,7 +164,8 @@ ruff check .
 pytest
 ```
 
-GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12.
+GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12. Osobny workflow Windows tworzy
+gotowy instalator `.exe` oraz wersję przenośną `.zip` przy zmianach w aplikacji.
 
 ## Struktura projektu
 
@@ -159,9 +188,8 @@ src/polysub/
 - profile postaci przypisywane do konkretnych rozmówców;
 - pamięć zaakceptowanych tłumaczeń;
 - dołączanie napisów do MKV/MP4 przez FFmpeg;
-- gotowy instalator Windows `.exe`.
+- podpis cyfrowy instalatora Windows certyfikatem code-signing.
 
 ## Licencja
 
 [MIT](LICENSE)
-

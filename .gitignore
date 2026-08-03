@@ -9,8 +9,9 @@ htmlcov/
 venv/
 dist/
 build/
+installer-output/
+artifacts/
 *.srt.polysub.json
 .env
 .idea/
 .vscode/
-
