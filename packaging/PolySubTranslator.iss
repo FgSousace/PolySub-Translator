@@ -1,5 +1,5 @@
 #define MyAppName "PolySub Translator"
-#define MyAppVersion "0.4.0"
+#define MyAppVersion "0.4.1"
 #define MyAppPublisher "FgSousace"
 #define MyAppURL "https://github.com/FgSousace/PolySub-Translator"
 #define MyAppExeName "PolySubTranslator.exe"
@@ -11,16 +11,19 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
-AppUpdatesURL={#MyAppURL}/actions/workflows/build-windows.yml
+AppUpdatesURL={#MyAppURL}/releases/latest
 DefaultDirName={localappdata}\Programs\PolySub Translator
 DefaultGroupName=PolySub Translator
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\installer-output
 OutputBaseFilename=PolySub-Translator-Setup
-Compression=lzma2/max
+Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
+ShowLanguageDialog=no
+DisableWelcomePage=yes
+UsePreviousAppDir=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}

@@ -3,4 +3,4 @@
 from .models import TranslationMode
 
 __all__ = ["TranslationMode"]
-__version__ = "0.4.0"
+__version__ = "0.4.1"
