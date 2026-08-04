@@ -1,8 +1,18 @@
-## Najprostsza instalacja na Windows
+## Dwa wygodne sposoby instalacji na Windows
 
-1. W sekcji **Assets** pobierz `PolySub-Translator-Setup.exe`.
-2. Uruchom pobrany plik i kliknij **Instaluj**.
-3. Po instalacji używaj skrótu **PolySub Translator** na pulpicie lub w menu Start.
+### Najszybciej
+
+1. Pobierz `PolySub-Translator-Setup.exe`.
+2. Uruchom plik, wybierz katalog i kliknij **Instaluj**.
+
+### Instalator w ZIP-ie
+
+1. Pobierz `PolySub-Translator-Installer.zip`.
+2. Rozpakuj go — w środku są `PolySub-Translator-Setup.exe` i `README.txt`.
+3. Uruchom instalator.
+
+Po instalacji kreator pokazuje krótką instrukcję i pozwala od razu uruchomić program. Skrót
+**PolySub Translator** jest dostępny na pulpicie oraz w menu Start.
 
 Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 

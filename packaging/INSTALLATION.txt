@@ -1,0 +1,31 @@
+POLYSUB TRANSLATOR — INSTALACJA NA WINDOWS
+==========================================
+
+1. Uruchom plik PolySub-Translator-Setup.exe.
+2. Wybierz folder, w którym ma zostać zainstalowany program.
+3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
+4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator.
+
+Program nie wymaga instalowania Pythona, Gita ani FFmpeg.
+Instalacja odbywa się tylko dla bieżącego użytkownika i nie wymaga konta administratora.
+
+PIERWSZE URUCHOMIENIE
+---------------------
+
+Tryb lokalny może przy pierwszym użyciu pobrać model tłumaczeniowy. Kolejne
+tłumaczenia używają już modelu zapisanego na komputerze.
+
+OSTRZEŻENIE WINDOWS SMARTSCREEN
+-------------------------------
+
+Projekt nie ma jeszcze komercyjnego certyfikatu podpisu cyfrowego. Jeżeli Windows
+wyświetli ostrzeżenie, wybierz „Więcej informacji”, a następnie „Uruchom mimo to”.
+
+POMOC I AKTUALIZACJE
+--------------------
+
+Najnowsze wersje:
+https://github.com/FgSousace/PolySub-Translator/releases/latest
+
+Zgłaszanie problemów:
+https://github.com/FgSousace/PolySub-Translator/issues

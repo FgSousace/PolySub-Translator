@@ -1,5 +1,5 @@
 #define MyAppName "PolySub Translator"
-#define MyAppVersion "0.4.1"
+#define MyAppVersion "0.4.2"
 #define MyAppPublisher "FgSousace"
 #define MyAppURL "https://github.com/FgSousace/PolySub-Translator"
 #define MyAppExeName "PolySubTranslator.exe"
@@ -14,6 +14,7 @@ AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases/latest
 DefaultDirName={localappdata}\Programs\PolySub Translator
 DefaultGroupName=PolySub Translator
+DisableDirPage=no
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\installer-output
@@ -24,6 +25,7 @@ WizardStyle=modern
 ShowLanguageDialog=no
 DisableWelcomePage=yes
 UsePreviousAppDir=yes
+InfoAfterFile=INSTALLATION.txt
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -40,6 +42,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\PolySubTranslator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "INSTALLATION.txt"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\PolySub Translator"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
@@ -47,3 +50,4 @@ Name: "{autodesktop}\PolySub Translator"; Filename: "{app}\{#MyAppExeName}"; Wor
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\README.txt"; Description: "Otwórz instrukcję README"; Flags: postinstall shellexec skipifsilent unchecked

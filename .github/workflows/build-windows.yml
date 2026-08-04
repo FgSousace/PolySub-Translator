@@ -84,6 +84,10 @@ jobs:
           if (-not (Test-Path $installedExe)) {
             throw "Instalator nie utworzył PolySubTranslator.exe."
           }
+          $installedReadme = Join-Path $installDir "README.txt"
+          if (-not (Test-Path $installedReadme)) {
+            throw "Instalator nie utworzył README.txt."
+          }
           foreach ($argument in @("--version", "--self-test-video")) {
             $process = Start-Process `
               -FilePath $installedExe `
@@ -118,6 +122,23 @@ jobs:
             -Path ".\dist\PolySubTranslator" `
             -DestinationPath ".\installer-output\PolySub-Translator-Portable.zip"
 
+      - name: Create and test installer ZIP
+        shell: pwsh
+        run: |
+          $packageDir = ".\installer-output\PolySub-Translator-Installer"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          Copy-Item ".\installer-output\PolySub-Translator-Setup.exe" (Join-Path $packageDir "PolySub-Translator-Setup.exe")
+          Copy-Item ".\packaging\INSTALLATION.txt" (Join-Path $packageDir "README.txt")
+          Compress-Archive -Path "$packageDir\*" -DestinationPath ".\installer-output\PolySub-Translator-Installer.zip"
+
+          $testDir = Join-Path $env:RUNNER_TEMP "PolySub-Installer-Zip-Test"
+          Expand-Archive -Path ".\installer-output\PolySub-Translator-Installer.zip" -DestinationPath $testDir -Force
+          foreach ($requiredFile in @("PolySub-Translator-Setup.exe", "README.txt")) {
+            if (-not (Test-Path (Join-Path $testDir $requiredFile))) {
+              throw "W paczce instalatora brakuje pliku $requiredFile."
+            }
+          }
+
       - name: Prepare release files
         shell: pwsh
         run: |
@@ -133,6 +154,7 @@ jobs:
 
           $releaseFiles = @(
             ".\installer-output\PolySub-Translator-Setup.exe",
+            ".\installer-output\PolySub-Translator-Installer.zip",
             ".\installer-output\PolySub-Translator-Portable.zip"
           )
           $hashes = foreach ($file in $releaseFiles) {
@@ -149,6 +171,7 @@ jobs:
           name: PolySub-Translator-Windows
           path: |
             installer-output/PolySub-Translator-Setup.exe
+            installer-output/PolySub-Translator-Installer.zip
             installer-output/PolySub-Translator-Portable.zip
             installer-output/SHA256SUMS.txt
           if-no-files-found: error
@@ -163,6 +186,7 @@ jobs:
           $tag = "v$env:POLYSUB_VERSION"
           $assets = @(
             ".\installer-output\PolySub-Translator-Setup.exe",
+            ".\installer-output\PolySub-Translator-Installer.zip",
             ".\installer-output\PolySub-Translator-Portable.zip",
             ".\installer-output\SHA256SUMS.txt"
           )

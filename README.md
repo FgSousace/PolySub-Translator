@@ -8,7 +8,7 @@ kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokaln
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.1-alpha` — prostszy instalator Windows, SRT, import filmu i dołączanie napisów.
+> Status: `v0.4.2-alpha` — dwa wygodne warianty instalatora Windows, SRT, import filmu i dołączanie napisów.
 
 ## Najważniejsze funkcje
 
@@ -81,9 +81,12 @@ Nie musisz instalować Pythona, Gita ani wpisywać komend. Instalator pobiera si
 zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego artefaktu:
 
 1. Otwórz [najnowszą wersję PolySub Translator](https://github.com/FgSousace/PolySub-Translator/releases/latest).
-2. W sekcji **Assets** kliknij bezpośrednio `PolySub-Translator-Setup.exe`.
-3. Uruchom pobrany plik i kliknij **Instaluj** — nie trzeba go wcześniej rozpakowywać.
-4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i zakończ instalację.
+2. W sekcji **Assets** wybierz jeden z dwóch wariantów:
+   - `PolySub-Translator-Setup.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
+   - `PolySub-Translator-Installer.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
+3. Uruchom `PolySub-Translator-Setup.exe` i wybierz katalog instalacji.
+4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
+5. Po instalacji kreator pokaże krótką instrukcję oraz opcję uruchomienia programu.
 
 Przy kolejnych uruchomieniach klikaj skrót **PolySub Translator** na pulpicie albo w menu Start.
 Instalator działa dla bieżącego użytkownika i nie wymaga uprawnień administratora.
@@ -215,8 +218,8 @@ pytest
 ```
 
 GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12. Workflow Windows buduje
-`Setup.exe`, instaluje go w czystym katalogu, uruchamia oba testy programu, sprawdza deinstalator,
-a dopiero potem publikuje instalator i wersję przenośną w GitHub Releases.
+`Setup.exe`, instaluje go w czystym katalogu, sprawdza dołączony README, uruchamia oba testy programu,
+sprawdza deinstalator i zawartość instalacyjnego ZIP-a, a dopiero potem publikuje pliki w Releases.
 
 ## Struktura projektu
 
