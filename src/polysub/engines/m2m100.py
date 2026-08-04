@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from .base import TranslationEngine, TranslationEngineError
+
+StatusCallback = Callable[[str], None]
 
 
 class M2M100Engine(TranslationEngine):
@@ -11,7 +13,14 @@ class M2M100Engine(TranslationEngine):
     max_batch_size = 8
     supports_context = False
 
-    def __init__(self, model_name: str = "facebook/m2m100_418M", device: str | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str = "facebook/m2m100_418M",
+        device: str | None = None,
+        status: StatusCallback | None = None,
+    ) -> None:
+        status = status or (lambda _message: None)
+        status("Ładowanie bibliotek lokalnego AI...")
         try:
             import torch
             from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
@@ -22,11 +31,16 @@ class M2M100Engine(TranslationEngine):
 
         self._torch = torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        status(f"Urządzenie obliczeniowe: {self.device.upper()}.")
         try:
+            status("Pobieranie lub odczytywanie tokenizera M2M100...")
             self.tokenizer = M2M100Tokenizer.from_pretrained(model_name)
+            status("Pobieranie lub odczytywanie modelu M2M100...")
             self.model = M2M100ForConditionalGeneration.from_pretrained(model_name)
+            status(f"Przenoszenie modelu na urządzenie {self.device.upper()}...")
             self.model.to(self.device)
             self.model.eval()
+            status("Lokalny model AI jest gotowy.")
         except Exception as exc:  # model loaders expose several backend-specific exceptions
             raise TranslationEngineError(
                 f"Nie udało się wczytać modelu {model_name}: {exc}"

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import threading
+import time
 import tkinter as tk
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -34,17 +37,54 @@ SPEECH_MODEL_LABELS = {
 }
 
 
+def enable_windows_dpi_awareness() -> None:
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
+
+
+def recommended_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
+    """Fit the main window to the usable screen without hiding its bottom actions."""
+    available_width = max(screen_width - 40, min(screen_width, 360))
+    available_height = max(screen_height - 80, min(screen_height, 420))
+    return min(1000, available_width), min(900, available_height)
+
+
+def format_elapsed(seconds: float) -> str:
+    elapsed = max(int(seconds), 0)
+    hours, remainder = divmod(elapsed, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 class PolySubApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("PolySub Translator")
-        self.geometry("920x730")
-        self.minsize(780, 650)
+        width, height = recommended_window_size(
+            self.winfo_screenwidth(),
+            self.winfo_screenheight(),
+        )
+        left = max((self.winfo_screenwidth() - width) // 2, 0)
+        top = max((self.winfo_screenheight() - height) // 2, 0)
+        self.geometry(f"{width}x{height}+{left}+{top}")
+        self.minsize(min(700, width), min(560, height))
         self.document: SRTDocument | None = None
         self.source_path: Path | None = None
         self.media_path: Path | None = None
         self.translated_subtitle_path: Path | None = None
         self.translated_target_language: str | None = None
+        self._activity_stages: list[str] = []
+        self._activity_active = False
+        self._activity_started_at = 0.0
+        self._heartbeat_job: str | None = None
+        self._last_log_message: str | None = None
         self._build_style()
         self._build_ui()
 
@@ -58,8 +98,39 @@ class PolySubApp(tk.Tk):
         style.configure("Mode.TRadiobutton", font=("Segoe UI", 11, "bold"), padding=8)
 
     def _build_ui(self) -> None:
-        container = ttk.Frame(self, padding=24)
-        container.pack(fill="both", expand=True)
+        self.rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+
+        main_host = ttk.Frame(self)
+        main_host.grid(row=0, column=0, sticky="nsew")
+        main_host.rowconfigure(0, weight=1)
+        main_host.columnconfigure(0, weight=1)
+
+        frame_background = ttk.Style(self).lookup("TFrame", "background") or "#f0f0f0"
+        self.content_canvas = tk.Canvas(
+            main_host,
+            background=frame_background,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        content_scrollbar = ttk.Scrollbar(
+            main_host,
+            orient="vertical",
+            command=self.content_canvas.yview,
+        )
+        self.content_canvas.configure(yscrollcommand=content_scrollbar.set)
+        self.content_canvas.grid(row=0, column=0, sticky="nsew")
+        content_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        container = ttk.Frame(self.content_canvas, padding=(24, 20, 18, 12))
+        self.content_window = self.content_canvas.create_window(
+            (0, 0),
+            window=container,
+            anchor="nw",
+        )
+        container.bind("<Configure>", self._sync_scroll_region)
+        self.content_canvas.bind("<Configure>", self._resize_scroll_content)
+        self.bind("<MouseWheel>", self._scroll_main_content, add="+")
 
         ttk.Label(container, text="PolySub Translator", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -170,35 +241,204 @@ class PolySubApp(tk.Tk):
         )
         self.context_text.pack(fill="both", expand=True, pady=(6, 0))
 
-        progress_frame = ttk.Frame(container)
-        progress_frame.pack(fill="x")
-        self.progress_var = tk.IntVar(value=0)
-        self.progress_bar = ttk.Progressbar(
-            progress_frame, variable=self.progress_var, maximum=1, mode="determinate"
-        )
-        self.progress_bar.pack(fill="x")
-        self.progress_text = tk.StringVar(value="Przetłumaczono 0 z 0 słów")
-        ttk.Label(progress_frame, textvariable=self.progress_text).pack(anchor="w", pady=(4, 0))
-        self.status_var = tk.StringVar(value="Gotowy")
-        ttk.Label(progress_frame, textvariable=self.status_var).pack(anchor="w")
+        self._build_activity_panel()
+        self._build_action_bar()
+        self._update_api_state()
 
-        action_frame = ttk.Frame(container)
-        action_frame.pack(fill="x", pady=(12, 0))
+    def _build_action_bar(self) -> None:
+        action_frame = ttk.Frame(self, padding=(24, 10, 24, 16))
+        action_frame.grid(row=2, column=0, sticky="ew")
+        action_frame.columnconfigure(0, weight=1)
+        action_frame.columnconfigure(1, weight=1)
         self.attach_button = ttk.Button(
             action_frame,
             text="Dołącz napisy do filmu — szybko",
             command=self._attach_subtitles,
             state="disabled",
         )
-        self.attach_button.pack(side="left")
+        self.attach_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self.start_button = ttk.Button(
             action_frame,
             text="Rozpocznij tłumaczenie",
             command=self._start_translation,
             style="Primary.TButton",
         )
-        self.start_button.pack(side="right")
-        self._update_api_state()
+        self.start_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+    def _build_activity_panel(self) -> None:
+        activity = ttk.LabelFrame(self, text="Postęp operacji", padding=(18, 10))
+        activity.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 0))
+        activity.columnconfigure(0, weight=1)
+
+        stage_header = ttk.Frame(activity)
+        stage_header.grid(row=0, column=0, sticky="ew")
+        stage_header.columnconfigure(0, weight=1)
+        self.stage_text = tk.StringVar(value="Etapy: oczekiwanie na zadanie")
+        ttk.Label(stage_header, textvariable=self.stage_text, style="Heading.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+        self.elapsed_text = tk.StringVar(value="Czas: 00:00:00")
+        ttk.Label(stage_header, textvariable=self.elapsed_text).grid(
+            row=0,
+            column=1,
+            sticky="e",
+        )
+
+        self.stage_progress_var = tk.IntVar(value=0)
+        self.stage_progress_bar = ttk.Progressbar(
+            activity,
+            variable=self.stage_progress_var,
+            maximum=1,
+            mode="determinate",
+        )
+        self.stage_progress_bar.grid(row=1, column=0, sticky="ew", pady=(5, 8))
+
+        self.progress_text = tk.StringVar(value="Bieżący etap: oczekiwanie")
+        ttk.Label(activity, textvariable=self.progress_text).grid(row=2, column=0, sticky="w")
+        self.progress_var = tk.IntVar(value=0)
+        self.progress_bar = ttk.Progressbar(
+            activity,
+            variable=self.progress_var,
+            maximum=1,
+            mode="determinate",
+        )
+        self.progress_bar.grid(row=3, column=0, sticky="ew", pady=(5, 6))
+
+        self.status_var = tk.StringVar(value="Gotowy")
+        ttk.Label(activity, textvariable=self.status_var).grid(row=4, column=0, sticky="w")
+
+        self.activity_log = scrolledtext.ScrolledText(
+            activity,
+            height=4,
+            wrap="word",
+            font=("Consolas", 9),
+            state="disabled",
+        )
+        self.activity_log.grid(row=5, column=0, sticky="ew", pady=(7, 0))
+
+    def _sync_scroll_region(self, _event=None) -> None:
+        self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all"))
+
+    def _resize_scroll_content(self, event) -> None:
+        self.content_canvas.itemconfigure(self.content_window, width=event.width)
+
+    def _scroll_main_content(self, event) -> None:
+        widget = self.winfo_containing(self.winfo_pointerx(), self.winfo_pointery())
+        if widget is None or widget.winfo_toplevel() is not self:
+            return
+        if isinstance(widget, tk.Text):
+            return
+        current = widget
+        while current is not self and current is not self.content_canvas:
+            current = current.master
+        if current is not self.content_canvas:
+            return
+        delta = -1 if event.delta > 0 else 1
+        self.content_canvas.yview_scroll(delta * 3, "units")
+
+    def _begin_activity(self, stages: list[str], message: str) -> None:
+        if self._heartbeat_job is not None:
+            self.after_cancel(self._heartbeat_job)
+        self._activity_stages = stages
+        self._activity_active = True
+        self._activity_started_at = time.monotonic()
+        self._last_log_message = None
+        self.activity_log.configure(state="normal")
+        self.activity_log.delete("1.0", "end")
+        self.activity_log.configure(state="disabled")
+        self.stage_progress_bar.configure(maximum=max(len(stages), 1))
+        self.stage_progress_var.set(0)
+        self.elapsed_text.set("Czas: 00:00:00")
+        self._show_stage(1, message)
+        self._tick_elapsed()
+
+    def _show_stage(
+        self,
+        index: int,
+        message: str | None = None,
+        *,
+        determinate: bool = False,
+    ) -> None:
+        total = max(len(self._activity_stages), 1)
+        index = min(max(index, 1), total)
+        title = (
+            self._activity_stages[index - 1]
+            if self._activity_stages
+            else "Przetwarzanie"
+        )
+        self.stage_progress_var.set(index)
+        self.stage_text.set(f"Etap {index} z {total} — {title}")
+        detail = message or title
+        self.status_var.set(detail)
+        if determinate:
+            self._prepare_determinate_progress(detail)
+        else:
+            self._start_indeterminate_progress(detail)
+        self._append_activity(detail)
+
+    def _start_indeterminate_progress(self, message: str) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="indeterminate", maximum=1)
+        self.progress_var.set(0)
+        self.progress_text.set(message)
+        self.progress_bar.start(12)
+
+    def _prepare_determinate_progress(self, message: str) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate", maximum=1)
+        self.progress_var.set(0)
+        self.progress_text.set(message)
+
+    def _append_activity(self, message: str) -> None:
+        clean = " ".join(message.strip().split())
+        if not clean or clean == self._last_log_message:
+            return
+        self._last_log_message = clean
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.activity_log.configure(state="normal")
+        self.activity_log.insert("end", f"[{timestamp}] {clean}\n")
+        self.activity_log.see("end")
+        self.activity_log.configure(state="disabled")
+
+    def _tick_elapsed(self) -> None:
+        if not self._activity_active:
+            self._heartbeat_job = None
+            return
+        elapsed = time.monotonic() - self._activity_started_at
+        self.elapsed_text.set(f"Czas: {format_elapsed(elapsed)} • program działa")
+        self._heartbeat_job = self.after(1000, self._tick_elapsed)
+
+    def _finish_activity(self, message: str) -> None:
+        elapsed = time.monotonic() - self._activity_started_at
+        self._activity_active = False
+        if self._heartbeat_job is not None:
+            self.after_cancel(self._heartbeat_job)
+            self._heartbeat_job = None
+        total = max(len(self._activity_stages), 1)
+        self.stage_progress_var.set(total)
+        self.stage_text.set(f"Zakończono wszystkie etapy: {total} z {total}")
+        self.elapsed_text.set(f"Łączny czas: {format_elapsed(elapsed)}")
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
+        maximum = max(int(float(self.progress_bar.cget("maximum"))), 1)
+        self.progress_var.set(maximum)
+        self.progress_text.set(message)
+        self.status_var.set(message)
+        self._append_activity(f"Gotowe — {message}")
+
+    def _fail_activity(self, message: str) -> None:
+        elapsed = time.monotonic() - self._activity_started_at
+        self._activity_active = False
+        if self._heartbeat_job is not None:
+            self.after_cancel(self._heartbeat_job)
+            self._heartbeat_job = None
+        self.progress_bar.stop()
+        self.stage_text.set(f"Operacja przerwana — {self.stage_text.get()}")
+        self.elapsed_text.set(f"Czas do błędu: {format_elapsed(elapsed)}")
+        self.status_var.set(message)
+        self._append_activity(f"BŁĄD — {message}")
 
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -223,22 +463,76 @@ class PolySubApp(tk.Tk):
         if selected_path.suffix.lower() in VIDEO_EXTENSIONS:
             self._start_video_import(selected_path)
             return
+
+        self._start_subtitle_import(selected_path)
+
+    def _start_subtitle_import(self, subtitle_path: Path) -> None:
+        self.file_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.attach_button.configure(state="disabled")
+        self._begin_activity(
+            ["Wczytywanie pliku", "Wykrywanie języka", "Przygotowanie dokumentu"],
+            f"Otwieranie pliku {subtitle_path.name}",
+        )
+        thread = threading.Thread(
+            target=self._subtitle_import_worker,
+            args=(subtitle_path,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _subtitle_import_worker(self, subtitle_path: Path) -> None:
         try:
-            document = SRTDocument.load(selected_path)
+            document = SRTDocument.load(subtitle_path)
+            self.after(
+                0,
+                self._show_stage,
+                2,
+                "Analizowanie tekstu i wykrywanie języka...",
+            )
             detected = detect_language(document.combined_text)
         except Exception as exc:
-            messagebox.showerror("Nie można wczytać pliku", str(exc), parent=self)
+            self.after(0, self._subtitle_import_failed, str(exc))
             return
-        self._document_ready(document, selected_path, detected)
+        self.after(0, self._subtitle_import_finished, document, subtitle_path, detected)
+
+    def _subtitle_import_finished(
+        self,
+        document: SRTDocument,
+        subtitle_path: Path,
+        detected,
+    ) -> None:
+        self._show_stage(
+            3,
+            f"Przygotowano {len(document.cues):,} kwestii i {document.total_words:,} słów".replace(
+                ",", " "
+            ),
+            determinate=True,
+        )
+        self._document_ready(document, subtitle_path, detected)
+        self.file_button.configure(state="normal")
+        self._finish_activity(f"Napisy gotowe do tłumaczenia: {subtitle_path.name}")
+
+    def _subtitle_import_failed(self, message: str) -> None:
+        self.file_button.configure(state="normal")
+        self.start_button.configure(state="normal")
+        self._update_attach_button()
+        self._fail_activity("Nie udało się wczytać napisów")
+        messagebox.showerror("Nie można wczytać pliku", message, parent=self)
 
     def _start_video_import(self, video_path: Path) -> None:
         self.file_button.configure(state="disabled")
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
-        self.status_var.set("Sprawdzanie filmu...")
-        self.progress_text.set("Szukanie wbudowanych napisów")
-        self.progress_bar.configure(maximum=1)
-        self.progress_var.set(0)
+        self._begin_activity(
+            [
+                "Analiza filmu",
+                "Przygotowanie napisów",
+                "Wykrywanie języka",
+                "Przygotowanie dokumentu",
+            ],
+            f"Sprawdzanie filmu {video_path.name}",
+        )
         model_size = SPEECH_MODEL_LABELS[self.speech_model_var.get()]
         thread = threading.Thread(
             target=self._video_import_worker,
@@ -252,15 +546,27 @@ class PolySubApp(tk.Tk):
             importer = VideoSubtitleImporter(model_size=model_size)
             result = importer.import_video(
                 video_path,
-                status=lambda message: self.after(0, self.status_var.set, message),
+                status=lambda message: self.after(0, self._video_status, message),
                 progress=lambda done, total: self.after(
                     0, self._set_media_progress, done, total
                 ),
+            )
+            self.after(
+                0,
+                self._show_stage,
+                3,
+                "Wykrywanie języka przygotowanych napisów...",
             )
             detected = detect_language(result.document.combined_text)
             self.after(0, self._video_import_finished, video_path, result, detected)
         except Exception as exc:
             self.after(0, self._video_import_failed, str(exc))
+
+    def _video_status(self, message: str) -> None:
+        if "wbudowanej" in message.lower():
+            self._show_stage(1, message)
+            return
+        self._show_stage(2, message)
 
     def _video_import_finished(
         self,
@@ -281,13 +587,18 @@ class PolySubApp(tk.Tk):
             file_label=f"{video_path.name}  →  {result.subtitle_path.name}",
             status=f"{method}: {result.subtitle_path.name}",
         )
+        self._show_stage(
+            4,
+            f"{method}. Przygotowano {len(result.document.cues):,} kwestii.".replace(",", " "),
+            determinate=True,
+        )
         self.file_button.configure(state="normal")
+        self._finish_activity(f"Napisy z filmu gotowe: {result.subtitle_path.name}")
 
     def _video_import_failed(self, message: str) -> None:
         self.file_button.configure(state="normal")
         self.start_button.configure(state="normal")
-        self.status_var.set("Nie udało się przygotować filmu")
-        self.progress_text.set("Nie utworzono napisów")
+        self._fail_activity("Nie udało się przygotować filmu")
         messagebox.showerror("Import filmu nie powiódł się", message, parent=self)
 
     def _document_ready(
@@ -340,12 +651,26 @@ class PolySubApp(tk.Tk):
         self.attach_button.configure(state="disabled")
         self.translated_subtitle_path = None
         self.translated_target_language = None
-        self.status_var.set("Przygotowywanie silnika...")
-        self._set_progress(0, self.document.total_words)
         engine_kind = ENGINE_LABELS[self.engine_var.get()]
         api_key = self.api_key_var.get()
         mode = TranslationMode(self.mode_var.get())
         context_notes = self.context_text.get("1.0", "end").strip()
+        final_processing_stage = (
+            "Przygotowanie weryfikacji"
+            if mode is TranslationMode.REVIEW
+            else "Zapisywanie wyniku"
+        )
+        self._begin_activity(
+            [
+                "Przygotowanie silnika",
+                "Sprawdzanie wznowienia",
+                "Tłumaczenie napisów",
+                "Kontrola jakości",
+                final_processing_stage,
+                "Gotowe",
+            ],
+            "Przygotowywanie silnika tłumaczenia...",
+        )
         thread = threading.Thread(
             target=self._translation_worker,
             args=(source, target, engine_kind, api_key, mode, context_notes),
@@ -363,7 +688,19 @@ class PolySubApp(tk.Tk):
         context_notes: str,
     ) -> None:
         try:
-            engine = DeepLEngine(api_key) if engine_kind == "deepl" else M2M100Engine()
+            engine = (
+                DeepLEngine(api_key)
+                if engine_kind == "deepl"
+                else M2M100Engine(
+                    status=lambda message: self.after(0, self._engine_status, message)
+                )
+            )
+            self.after(
+                0,
+                self._show_stage,
+                2,
+                f"Silnik {engine.display_name} gotowy. Sprawdzanie punktu wznowienia...",
+            )
             options = TranslationOptions(
                 source_language=source,
                 target_language=target,
@@ -371,17 +708,35 @@ class PolySubApp(tk.Tk):
                 context_notes=context_notes,
             )
             service = TranslationService(engine)
-            self.after(0, self.status_var.set, f"Tłumaczenie przez {engine.display_name}...")
             output = self._translation_output_path(target)
             result = service.translate(
                 self.document,
                 options,
                 progress=lambda done, total: self.after(0, self._set_progress, done, total),
+                status=lambda message: self.after(
+                    0,
+                    self._translation_service_status,
+                    message,
+                ),
                 output_path=output if mode is TranslationMode.AUTOMATIC else None,
             )
             self.after(0, self._translation_finished, result, output, mode, target)
         except Exception as exc:
             self.after(0, self._translation_failed, str(exc))
+
+    def _engine_status(self, message: str) -> None:
+        self._show_stage(1, message)
+
+    def _translation_service_status(self, message: str) -> None:
+        lowered = message.lower()
+        if "wznowienia" in lowered or "wcześniejsz" in lowered:
+            self._show_stage(2, message)
+        elif lowered.startswith("tłumaczenie "):
+            self._show_stage(3, message, determinate=True)
+        elif "kontrola" in lowered or "analizowanie jakości" in lowered:
+            self._show_stage(4, message)
+        else:
+            self._show_stage(5, message)
 
     def _translation_finished(
         self,
@@ -393,9 +748,11 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="normal")
         self.file_button.configure(state="normal")
         if mode is TranslationMode.REVIEW:
-            self.status_var.set(
+            finished_message = (
                 f"Tłumaczenie gotowe — {len(result.review_items)} kwestii oznaczono."
             )
+            self._show_stage(6, finished_message, determinate=True)
+            self._finish_activity(finished_message)
             ReviewWindow(
                 self,
                 self.document,
@@ -409,7 +766,9 @@ class PolySubApp(tk.Tk):
             )
             return
         self._translated_subtitle_ready(output, target_language)
-        self.status_var.set(f"Gotowe: {output.name}")
+        finished_message = f"Gotowe: {output.name}"
+        self._show_stage(6, finished_message, determinate=True)
+        self._finish_activity(finished_message)
         suffix = (
             "\n\nMożesz teraz użyć przycisku „Dołącz napisy do filmu — szybko”."
             if self.media_path is not None
@@ -425,7 +784,7 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="normal")
         self.file_button.configure(state="normal")
         self._update_attach_button()
-        self.status_var.set("Wystąpił błąd")
+        self._fail_activity("Tłumaczenie przerwane z powodu błędu")
         messagebox.showerror("Tłumaczenie nie powiodło się", message, parent=self)
 
     def _translated_subtitle_ready(self, subtitle_path: Path, target_language: str) -> None:
@@ -478,10 +837,15 @@ class PolySubApp(tk.Tk):
         self.file_button.configure(state="disabled")
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
-        self.progress_bar.configure(mode="indeterminate")
-        self.progress_bar.start(12)
-        self.progress_text.set("Kopiowanie obrazu i dźwięku bez ponownego kodowania")
-        self.status_var.set("Szybkie dołączanie napisów do filmu...")
+        self._begin_activity(
+            [
+                "Sprawdzanie plików",
+                "Przygotowanie FFmpeg",
+                "Dołączanie napisów",
+                "Gotowe",
+            ],
+            "Sprawdzanie filmu i przygotowanych napisów...",
+        )
         thread = threading.Thread(
             target=self._attach_subtitles_worker,
             args=(Path(selected),),
@@ -504,14 +868,26 @@ class PolySubApp(tk.Tk):
                 target_language=target_language,
                 output_path=output_path,
                 subtitle_title=language_name(target_language),
+                status=lambda message: self.after(0, self._mux_status, message),
             )
             self.after(0, self._attach_subtitles_finished, output)
         except Exception as exc:
             self.after(0, self._attach_subtitles_failed, str(exc))
 
+    def _mux_status(self, message: str) -> None:
+        lowered = message.lower()
+        if "sprawdzanie" in lowered:
+            self._show_stage(1, message)
+        elif "przygotowywanie" in lowered:
+            self._show_stage(2, message)
+        else:
+            self._show_stage(3, message)
+
     def _attach_subtitles_finished(self, output_path: Path) -> None:
         self._finish_attach_operation()
-        self.status_var.set(f"Film z napisami gotowy: {output_path.name}")
+        finished_message = f"Film z napisami gotowy: {output_path.name}"
+        self._show_stage(4, finished_message, determinate=True)
+        self._finish_activity(finished_message)
         messagebox.showinfo(
             "Film gotowy",
             "Dołączono przełączaną ścieżkę napisów bez ponownego kodowania obrazu "
@@ -521,28 +897,35 @@ class PolySubApp(tk.Tk):
 
     def _attach_subtitles_failed(self, message: str) -> None:
         self._finish_attach_operation()
-        self.status_var.set("Nie udało się dołączyć napisów")
+        self._fail_activity("Nie udało się dołączyć napisów")
         messagebox.showerror("Dołączanie napisów nie powiodło się", message, parent=self)
 
     def _finish_attach_operation(self) -> None:
-        self.progress_bar.stop()
-        self.progress_bar.configure(mode="determinate")
-        if self.document is not None:
-            self._set_progress(self.document.total_words, self.document.total_words)
         self.file_button.configure(state="normal")
         self.start_button.configure(state="normal")
         self._update_attach_button()
 
     def _set_progress(self, processed: int, total: int) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
         self.progress_bar.configure(maximum=max(total, 1))
         self.progress_var.set(processed)
-        self.progress_text.set(f"Przetłumaczono {processed:,} z {total:,} słów".replace(",", " "))
+        percent = min(max(processed / max(total, 1) * 100, 0.0), 100.0)
+        self.progress_text.set(
+            (
+                f"Postęp etapu: {percent:.1f}% • przetłumaczono "
+                f"{processed:,} z {total:,} słów"
+            ).replace(",", " ")
+        )
 
     def _set_media_progress(self, processed: float, total: float) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
         self.progress_bar.configure(maximum=max(total, 1.0))
         self.progress_var.set(int(processed))
+        percent = min(max(processed / max(total, 1.0) * 100, 0.0), 100.0)
         self.progress_text.set(
-            "Rozpoznano "
+            f"Postęp etapu: {percent:.1f}% • rozpoznano "
             f"{format_media_duration(processed)} z {format_media_duration(total)} nagrania"
         )
 
@@ -711,6 +1094,7 @@ class ReviewWindow(tk.Toplevel):
 
 
 def main() -> None:
+    enable_windows_dpi_awareness()
     app = PolySubApp()
     app.mainloop()
 

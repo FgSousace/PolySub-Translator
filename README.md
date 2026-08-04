@@ -8,7 +8,7 @@ kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokaln
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.2-alpha` — dwa wygodne warianty instalatora Windows, SRT, import filmu i dołączanie napisów.
+> Status: `v0.4.3-alpha` — szczegółowy panel postępu, responsywny interfejs, SRT i obsługa filmów.
 
 ## Najważniejsze funkcje
 
@@ -19,7 +19,9 @@ niejasnych fragmentów.
 - szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
 - lokalny model M2M100 lub DeepL API;
-- licznik `Przetłumaczono 1 428 z 9 732 słów` zamiast samego procentu;
+- dwa paski postępu: wszystkie etapy operacji oraz dokładny postęp bieżącego etapu;
+- dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
+- przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
 - nienaruszalne identyfikatory i timestampy;
 - zapis awaryjny i automatyczne wznowienie przerwanego zadania;
 - informacje o postaciach, płci, relacjach i stylu jako dodatkowy kontekst;

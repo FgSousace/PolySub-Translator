@@ -73,7 +73,7 @@ class VideoSubtitleImporter:
         status(
             f"Brak tekstowych napisów — rozpoznawanie mowy przez Whisper {self.model_size}..."
         )
-        return self._transcribe_audio(video, progress=progress)
+        return self._transcribe_audio(video, status=status, progress=progress)
 
     def _extract_embedded_subtitles(
         self, video_path: Path
@@ -138,10 +138,12 @@ class VideoSubtitleImporter:
         self,
         video_path: Path,
         *,
+        status: StatusCallback,
         progress: MediaProgressCallback,
     ) -> VideoImportResult:
         model_factory = self.model_factory
         if model_factory is None:
+            status("Ładowanie modułu rozpoznawania mowy Whisper...")
             try:
                 from faster_whisper import WhisperModel
             except ImportError as exc:
@@ -155,12 +157,17 @@ class VideoSubtitleImporter:
             "POLYSUB_WHISPER_COMPUTE_TYPE", "int8" if device == "cpu" else "float16"
         )
         try:
+            status(
+                f"Pobieranie lub ładowanie modelu Whisper {self.model_size} "
+                f"na urządzenie {device.upper()}..."
+            )
             model = model_factory(
                 self.model_size,
                 device=device,
                 compute_type=compute_type,
                 download_root=str(_whisper_cache_path()),
             )
+            status("Analizowanie ścieżki dźwiękowej filmu...")
             segments, info = model.transcribe(
                 str(video_path),
                 task="transcribe",
@@ -168,6 +175,7 @@ class VideoSubtitleImporter:
                 vad_filter=True,
                 word_timestamps=True,
             )
+            status("Rozpoznawanie mowy i tworzenie kwestii napisów...")
             duration = float(getattr(info, "duration", 0.0) or 0.0)
             cues: list[SRTCue] = []
             for segment in segments:
@@ -184,6 +192,7 @@ class VideoSubtitleImporter:
                 "Film nie zawiera tekstowych napisów ani możliwej do rozpoznania mowy."
             )
 
+        status("Zapisywanie rozpoznanych napisów SRT...")
         output = transcribed_subtitle_path(video_path)
         document = SRTDocument(cues=cues, source_path=output)
         document.save(output)
@@ -209,7 +218,10 @@ class VideoSubtitleMuxer:
         target_language: str,
         output_path: str | Path | None = None,
         subtitle_title: str | None = None,
+        status: StatusCallback | None = None,
     ) -> Path:
+        status = status or (lambda _message: None)
+        status("Sprawdzanie filmu i przetłumaczonych napisów...")
         video = Path(video_path)
         subtitles = Path(subtitle_path)
         output = Path(output_path) if output_path else fast_mux_output_path(video, target_language)
@@ -225,6 +237,7 @@ class VideoSubtitleMuxer:
         if _same_path(video, output):
             raise VideoMuxError("Film wynikowy nie może nadpisywać oryginalnego filmu.")
 
+        status("Przygotowywanie programu FFmpeg...")
         ffmpeg = self._resolve_ffmpeg()
         if ffmpeg is None:
             raise VideoMuxError(
@@ -268,6 +281,7 @@ class VideoSubtitleMuxer:
         ]
         command.append(str(temporary))
 
+        status("Kopiowanie obrazu, dźwięku i dołączanie ścieżki napisów...")
         try:
             completed = subprocess.run(
                 command,
@@ -287,6 +301,7 @@ class VideoSubtitleMuxer:
                 message += f"\n\nFFmpeg: {details}"
             raise VideoMuxError(message)
 
+        status("Finalizowanie pliku filmu...")
         temporary.replace(output)
         return output
 

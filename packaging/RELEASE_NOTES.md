@@ -1,3 +1,11 @@
+## Nowości w wersji 0.4.3
+
+- dwa poziome paski: liczba ukończonych etapów i postęp bieżącej czynności;
+- dziennik pokazujący ładowanie modeli, wykrywanie języka, tłumaczenie, kontrolę i zapis;
+- licznik czasu z komunikatem potwierdzającym, że program nadal działa;
+- przewijane ustawienia oraz przyciski przypięte na dole, aby nie znikały na mniejszych ekranach;
+- lepsze skalowanie DPI w Windows.
+
 ## Dwa wygodne sposoby instalacji na Windows
 
 ### Najszybciej

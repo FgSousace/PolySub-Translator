@@ -58,15 +58,21 @@ class FailingEngine(FakeEngine):
 def test_translation_preserves_markup_and_reports_word_progress() -> None:
     document = SRTDocument.parse(SAMPLE)
     updates = []
+    statuses = []
     result = TranslationService(FakeEngine()).translate(
         document,
         TranslationOptions("en", "pl"),
         progress=lambda done, total: updates.append((done, total)),
+        status=statuses.append,
     )
 
     assert result.document.cues[0].text == "<i>Witaj świecie.</i>"
     assert result.document.cues[1].text == "Jestem gotowa."
     assert updates[-1] == (document.total_words, document.total_words)
+    assert statuses[0] == "Sprawdzanie zapisu wznowienia..."
+    assert any(message.startswith("Tłumaczenie 2 kwestii") for message in statuses)
+    assert "Kontrola struktury, timestampów i formatowania..." in statuses
+    assert statuses[-1] == "Przygotowywanie gotowego wyniku w pamięci..."
     result.document.assert_structure_matches(document)
 
 

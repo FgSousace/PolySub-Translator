@@ -51,7 +51,7 @@ jobs:
       - name: Smoke-test unpacked executable
         shell: pwsh
         run: |
-          foreach ($argument in @("--version", "--self-test-video")) {
+          foreach ($argument in @("--version", "--self-test-video", "--self-test-gui")) {
             $process = Start-Process `
               -FilePath ".\dist\PolySubTranslator\PolySubTranslator.exe" `
               -ArgumentList $argument `
@@ -88,7 +88,7 @@ jobs:
           if (-not (Test-Path $installedReadme)) {
             throw "Instalator nie utworzył README.txt."
           }
-          foreach ($argument in @("--version", "--self-test-video")) {
+          foreach ($argument in @("--version", "--self-test-video", "--self-test-gui")) {
             $process = Start-Process `
               -FilePath $installedExe `
               -ArgumentList $argument `

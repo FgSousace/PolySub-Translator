@@ -12,6 +12,7 @@ from .review import analyze_translation
 from .subtitles import SRTDocument
 
 ProgressCallback = Callable[[int, int], None]
+StatusCallback = Callable[[str], None]
 
 
 @dataclass(frozen=True)
@@ -34,12 +35,15 @@ class TranslationService:
         options: TranslationOptions,
         *,
         progress: ProgressCallback | None = None,
+        status: StatusCallback | None = None,
         output_path: Path | None = None,
     ) -> TranslationResult:
         original = document.clone()
         translated = document.clone()
         total_words = original.total_words
         progress = progress or (lambda _processed, _total: None)
+        status = status or (lambda _message: None)
+        status("Sprawdzanie zapisu wznowienia...")
         store = self._checkpoint(original, options)
         cached = store.load() if store else {}
         restored_translations: dict[int, str] = {}
@@ -52,11 +56,20 @@ class TranslationService:
                 restored_translations[position] = text
                 formatting[position] = True
                 processed_words += original.cues[position].word_count
-        progress(processed_words, total_words)
+        if cached:
+            status(f"Przywrócono {len(cached)} wcześniej przetłumaczonych kwestii.")
+        else:
+            status("Brak wcześniejszego postępu — rozpoczynanie od początku.")
 
         pending = [position for position in range(len(original.cues)) if position not in cached]
         accurate = options.mode is TranslationMode.REVIEW
         batch_size = 1 if accurate and self.engine.supports_context else self.engine.max_batch_size
+        total_batches = (len(pending) + batch_size - 1) // batch_size
+        status(
+            f"Tłumaczenie {len(pending)} kwestii w {total_batches} partiach "
+            f"przez {self.engine.display_name}..."
+        )
+        progress(processed_words, total_words)
 
         for start in range(0, len(pending), batch_size):
             positions = pending[start : start + batch_size]
@@ -82,10 +95,19 @@ class TranslationService:
                 store.save(restored_translations)
             progress(processed_words, total_words)
 
+        status("Kontrola struktury, timestampów i formatowania...")
         translated.assert_structure_matches(original)
+        status("Analizowanie jakości gotowego tłumaczenia...")
         review_items = self._review(original, translated, options, formatting)
+        if output_path:
+            status("Zapisywanie przetłumaczonego pliku...")
+        elif options.mode is TranslationMode.REVIEW:
+            status("Przygotowywanie tłumaczenia do ręcznej weryfikacji...")
+        else:
+            status("Przygotowywanie gotowego wyniku w pamięci...")
         saved_path = translated.save(output_path) if output_path else None
         if store and options.mode is TranslationMode.AUTOMATIC:
+            status("Czyszczenie zakończonego punktu wznowienia...")
             store.clear()
         return TranslationResult(
             document=translated,

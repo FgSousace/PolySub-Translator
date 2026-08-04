@@ -71,11 +71,16 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
         return FakeModel()
 
     updates = []
+    statuses = []
     result = VideoSubtitleImporter(
         model_size="small",
         ffmpeg_executable="ffmpeg",
         model_factory=model_factory,
-    ).import_video(video, progress=lambda done, total: updates.append((done, total)))
+    ).import_video(
+        video,
+        progress=lambda done, total: updates.append((done, total)),
+        status=statuses.append,
+    )
 
     assert model_calls[0][0] == "small"
     assert model_calls[0][1]["device"] == "cpu"
@@ -86,6 +91,8 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
     assert result.document.cues[0].timing == "00:00:00,500 --> 00:00:01,400"
     assert result.document.cues[0].text == "Hello world."
     assert updates[-1] == (1.4, 10.0)
+    assert any("modelu Whisper small" in message for message in statuses)
+    assert statuses[-1] == "Zapisywanie rozpoznanych napisów SRT..."
 
 
 def test_video_output_name_and_readable_duration(tmp_path) -> None:
@@ -115,11 +122,13 @@ def test_fast_mux_copies_video_and_audio_without_reencoding(tmp_path, monkeypatc
         return SimpleNamespace(returncode=0, stderr=b"")
 
     monkeypatch.setattr("polysub.video.subprocess.run", fake_run)
+    statuses = []
     output = VideoSubtitleMuxer(ffmpeg_executable="ffmpeg").mux(
         video,
         subtitles,
         target_language="pl",
         subtitle_title="Polski",
+        status=statuses.append,
     )
 
     command = commands[0]
@@ -130,6 +139,12 @@ def test_fast_mux_copies_video_and_audio_without_reencoding(tmp_path, monkeypatc
     assert command[command.index("-c:a") + 1] == "copy"
     assert command[command.index("-c:s") + 1] == "mov_text"
     assert "title=Polski" in command
+    assert statuses == [
+        "Sprawdzanie filmu i przetłumaczonych napisów...",
+        "Przygotowywanie programu FFmpeg...",
+        "Kopiowanie obrazu, dźwięku i dołączanie ścieżki napisów...",
+        "Finalizowanie pliku filmu...",
+    ]
 
 
 def test_fast_mux_uses_mkv_for_other_video_containers(tmp_path, monkeypatch) -> None:

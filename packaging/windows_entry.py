@@ -72,6 +72,27 @@ def main() -> None:
         _ = (av, ctranslate2, faster_whisper, onnxruntime)
         return
 
+    if "--self-test-gui" in sys.argv:
+        from polysub.gui import PolySubApp
+
+        app = PolySubApp()
+        try:
+            app.withdraw()
+            app.update_idletasks()
+            required_widgets = (
+                app.stage_progress_bar,
+                app.progress_bar,
+                app.activity_log,
+                app.start_button,
+            )
+            if any(not widget.winfo_manager() for widget in required_widgets):
+                raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
+            if app.start_button.winfo_manager() != "grid":
+                raise RuntimeError("Przycisk rozpoczęcia nie jest przypięty do dolnego paska.")
+        finally:
+            app.destroy()
+        return
+
     try:
         from polysub.gui import main as gui_main
 
