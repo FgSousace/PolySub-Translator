@@ -44,10 +44,16 @@ class VideoSubtitleImporter:
         model_size: str = "medium",
         ffmpeg_executable: str | None = None,
         model_factory: ModelFactory | None = None,
+        device: str | None = None,
+        device_index: int = 0,
+        allow_cpu_fallback: bool = True,
     ) -> None:
         self.model_size = model_size
         self.ffmpeg_executable = ffmpeg_executable
         self.model_factory = model_factory
+        self.device = device
+        self.device_index = device_index
+        self.allow_cpu_fallback = allow_cpu_fallback
 
     def import_video(
         self,
@@ -152,40 +158,40 @@ class VideoSubtitleImporter:
                 ) from exc
             model_factory = WhisperModel
 
-        device = os.getenv("POLYSUB_WHISPER_DEVICE", "cpu").strip() or "cpu"
-        compute_type = os.getenv(
-            "POLYSUB_WHISPER_COMPUTE_TYPE", "int8" if device == "cpu" else "float16"
-        )
+        configured_device = self.device or os.getenv("POLYSUB_WHISPER_DEVICE", "cpu")
+        device, device_index = _split_device(configured_device, self.device_index)
         try:
-            status(
-                f"Pobieranie lub ładowanie modelu Whisper {self.model_size} "
-                f"na urządzenie {device.upper()}..."
-            )
-            model = model_factory(
-                self.model_size,
+            cues, info = self._run_whisper(
+                model_factory,
+                video_path,
                 device=device,
-                compute_type=compute_type,
-                download_root=str(_whisper_cache_path()),
+                device_index=device_index,
+                status=status,
+                progress=progress,
             )
-            status("Analizowanie ścieżki dźwiękowej filmu...")
-            segments, info = model.transcribe(
-                str(video_path),
-                task="transcribe",
-                beam_size=5,
-                vad_filter=True,
-                word_timestamps=True,
-            )
-            status("Rozpoznawanie mowy i tworzenie kwestii napisów...")
-            duration = float(getattr(info, "duration", 0.0) or 0.0)
-            cues: list[SRTCue] = []
-            for segment in segments:
-                cues.extend(_cues_from_segment(segment, first_identifier=len(cues) + 1))
-                processed = float(getattr(segment, "end", 0.0) or 0.0)
-                progress(processed, max(duration, processed, 1.0))
         except VideoImportError:
             raise
         except Exception as exc:
-            raise VideoImportError(f"Nie udało się rozpoznać mowy z filmu: {exc}") from exc
+            if device != "cpu" and self.allow_cpu_fallback:
+                status(
+                    f"Nie udało się użyć GPU ({exc}). "
+                    "Automatyczne przełączanie rozpoznawania mowy na CPU..."
+                )
+                try:
+                    cues, info = self._run_whisper(
+                        model_factory,
+                        video_path,
+                        device="cpu",
+                        device_index=0,
+                        status=status,
+                        progress=progress,
+                    )
+                except Exception as cpu_exc:
+                    raise VideoImportError(
+                        f"Nie udało się rozpoznać mowy także na CPU: {cpu_exc}"
+                    ) from cpu_exc
+            else:
+                raise VideoImportError(f"Nie udało się rozpoznać mowy z filmu: {exc}") from exc
 
         if not cues:
             raise VideoImportError(
@@ -202,6 +208,48 @@ class VideoSubtitleImporter:
             method="transcribed",
             detected_language=getattr(info, "language", None),
         )
+
+    def _run_whisper(
+        self,
+        model_factory: ModelFactory,
+        video_path: Path,
+        *,
+        device: str,
+        device_index: int,
+        status: StatusCallback,
+        progress: MediaProgressCallback,
+    ):
+        compute_type = os.getenv(
+            "POLYSUB_WHISPER_COMPUTE_TYPE", "int8" if device == "cpu" else "float16"
+        )
+        status(
+            f"Pobieranie lub ładowanie modelu Whisper {self.model_size} "
+            f"na urządzenie {device.upper()}..."
+        )
+        model_kwargs: dict[str, Any] = {
+            "device": device,
+            "compute_type": compute_type,
+            "download_root": str(_whisper_cache_path()),
+        }
+        if device != "cpu":
+            model_kwargs["device_index"] = device_index
+        model = model_factory(self.model_size, **model_kwargs)
+        status("Analizowanie ścieżki dźwiękowej filmu...")
+        segments, info = model.transcribe(
+            str(video_path),
+            task="transcribe",
+            beam_size=5,
+            vad_filter=True,
+            word_timestamps=True,
+        )
+        status("Rozpoznawanie mowy i tworzenie kwestii napisów...")
+        duration = float(getattr(info, "duration", 0.0) or 0.0)
+        cues: list[SRTCue] = []
+        for segment in segments:
+            cues.extend(_cues_from_segment(segment, first_identifier=len(cues) + 1))
+            processed = float(getattr(segment, "end", 0.0) or 0.0)
+            progress(processed, max(duration, processed, 1.0))
+        return cues, info
 
 
 class VideoSubtitleMuxer:
@@ -356,6 +404,18 @@ def _whisper_cache_path() -> Path:
     if local_app_data:
         return Path(local_app_data) / "PolySub" / "models" / "faster-whisper"
     return Path.home() / ".cache" / "polysub" / "faster-whisper"
+
+
+def _split_device(value: str, default_index: int) -> tuple[str, int]:
+    normalized = value.strip().lower() or "cpu"
+    if ":" not in normalized:
+        return normalized, max(default_index, 0)
+    backend, raw_index = normalized.split(":", 1)
+    try:
+        index = max(int(raw_index), 0)
+    except ValueError:
+        index = max(default_index, 0)
+    return backend or "cpu", index
 
 
 def _same_path(first: Path, second: Path) -> bool:

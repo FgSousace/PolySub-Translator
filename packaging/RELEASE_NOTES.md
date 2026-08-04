@@ -1,4 +1,16 @@
-## Nowości w wersji 0.4.4
+## Nowości w wersji 0.4.5
+
+- dynamiczna lista pokazuje prawdziwy model procesora i wszystkie wykryte karty graficzne;
+- tryb **Automatycznie** osobno wybiera najlepsze urządzenie do tłumaczenia i rozpoznawania mowy;
+- można ręcznie wskazać konkretny CPU albo GPU, również w komputerze z kilkoma kartami;
+- program wykrywa dostępne backendy CUDA, ROCm oraz Intel XPU zamiast zgadywać po nazwie sprzętu;
+- przy braku zgodnego backendu wyświetla jasną informację i bezpiecznie przechodzi na CPU;
+- błąd GPU podczas ładowania lub obliczeń powoduje automatyczne ponowienie zadania na procesorze;
+- przycisk **Odśwież listę sprzętu** ponownie sprawdza urządzenia bez restartowania programu.
+
+Wydanie 0.4.4 pozostaje dostępne osobno w historii GitHub Releases.
+
+## Wcześniej dodane w wersji 0.4.4
 
 - program automatycznie sprawdza w tle najnowsze wydanie po uruchomieniu;
 - przycisk **Sprawdź aktualizacje** pozwala powtórzyć sprawdzenie w dowolnym momencie;

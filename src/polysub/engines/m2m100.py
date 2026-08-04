@@ -18,8 +18,11 @@ class M2M100Engine(TranslationEngine):
         model_name: str = "facebook/m2m100_418M",
         device: str | None = None,
         status: StatusCallback | None = None,
+        allow_cpu_fallback: bool = True,
     ) -> None:
         status = status or (lambda _message: None)
+        self._status = status
+        self._allow_cpu_fallback = allow_cpu_fallback
         status("Ładowanie bibliotek lokalnego AI...")
         try:
             import torch
@@ -30,21 +33,20 @@ class M2M100Engine(TranslationEngine):
             ) from exc
 
         self._torch = torch
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device or self._automatic_torch_device()
         status(f"Urządzenie obliczeniowe: {self.device.upper()}.")
         try:
             status("Pobieranie lub odczytywanie tokenizera M2M100...")
             self.tokenizer = M2M100Tokenizer.from_pretrained(model_name)
             status("Pobieranie lub odczytywanie modelu M2M100...")
             self.model = M2M100ForConditionalGeneration.from_pretrained(model_name)
-            status(f"Przenoszenie modelu na urządzenie {self.device.upper()}...")
-            self.model.to(self.device)
-            self.model.eval()
-            status("Lokalny model AI jest gotowy.")
         except Exception as exc:  # model loaders expose several backend-specific exceptions
             raise TranslationEngineError(
                 f"Nie udało się wczytać modelu {model_name}: {exc}"
             ) from exc
+        self._move_model_to_selected_device()
+        self.model.eval()
+        status("Lokalny model AI jest gotowy.")
 
     def translate_batch(
         self,
@@ -67,23 +69,76 @@ class M2M100Engine(TranslationEngine):
                 f"Lokalny model nie obsługuje pary językowej {source} → {target}."
             ) from exc
 
-        encoded = self.tokenizer(
+        encoded_on_cpu = self.tokenizer(
             list(texts),
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=512,
         )
-        encoded = {key: value.to(self.device) for key, value in encoded.items()}
         try:
-            with self._torch.inference_mode():
-                generated = self.model.generate(
-                    **encoded,
-                    forced_bos_token_id=target_id,
-                    num_beams=5 if accurate else 2,
-                    max_new_tokens=256,
-                    early_stopping=True,
-                )
+            generated = self._generate(encoded_on_cpu, target_id, accurate)
         except Exception as exc:
-            raise TranslationEngineError(f"Lokalne tłumaczenie nie powiodło się: {exc}") from exc
+            if self.device != "cpu" and self._allow_cpu_fallback:
+                self._status(
+                    f"Urządzenie {self.device.upper()} nie wykonało tłumaczenia: {exc}. "
+                    "Automatyczne przełączanie na CPU..."
+                )
+                self.device = "cpu"
+                try:
+                    self.model.to("cpu")
+                    generated = self._generate(encoded_on_cpu, target_id, accurate)
+                except Exception as cpu_exc:
+                    raise TranslationEngineError(
+                        f"Lokalne tłumaczenie nie powiodło się także na CPU: {cpu_exc}"
+                    ) from cpu_exc
+            else:
+                raise TranslationEngineError(
+                    f"Lokalne tłumaczenie nie powiodło się: {exc}"
+                ) from exc
         return self.tokenizer.batch_decode(generated, skip_special_tokens=True)
+
+    def _automatic_torch_device(self) -> str:
+        try:
+            if self._torch.cuda.is_available():
+                return "cuda:0"
+        except Exception:
+            pass
+        try:
+            if self._torch.xpu.is_available():
+                return "xpu:0"
+        except Exception:
+            pass
+        return "cpu"
+
+    def _move_model_to_selected_device(self) -> None:
+        self._status(f"Przenoszenie modelu na urządzenie {self.device.upper()}...")
+        try:
+            self.model.to(self.device)
+        except Exception as exc:
+            if self.device == "cpu" or not self._allow_cpu_fallback:
+                raise TranslationEngineError(
+                    f"Nie udało się uruchomić modelu na {self.device}: {exc}"
+                ) from exc
+            self._status(
+                f"Nie udało się użyć {self.device.upper()}: {exc}. "
+                "Automatyczne przełączanie na CPU..."
+            )
+            self.device = "cpu"
+            try:
+                self.model.to("cpu")
+            except Exception as cpu_exc:
+                raise TranslationEngineError(
+                    f"Nie udało się uruchomić modelu także na CPU: {cpu_exc}"
+                ) from cpu_exc
+
+    def _generate(self, encoded_on_cpu, target_id: int, accurate: bool):
+        encoded = {key: value.to(self.device) for key, value in encoded_on_cpu.items()}
+        with self._torch.inference_mode():
+            return self.model.generate(
+                **encoded,
+                forced_bos_token_id=target_id,
+                num_beams=5 if accurate else 2,
+                max_new_tokens=256,
+                early_stopping=True,
+            )

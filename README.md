@@ -8,7 +8,7 @@ kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokaln
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.4-alpha` — sprawdzanie aktualizacji, szczegółowy postęp, SRT i obsługa filmów.
+> Status: `v0.4.5-alpha` — automatyczny wybór sprzętu, aktualizacje, SRT i obsługa filmów.
 
 ## Najważniejsze funkcje
 
@@ -19,6 +19,8 @@ niejasnych fragmentów.
 - szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
 - lokalny model M2M100 lub DeepL API;
+- dynamiczna lista rzeczywiście wykrytych procesorów i kart NVIDIA, AMD oraz Intel;
+- tryb Auto wybierający najlepszy zgodny backend z bezpiecznym powrotem na CPU;
 - dwa paski postępu: wszystkie etapy operacji oraz dokładny postęp bieżącego etapu;
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
 - przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
@@ -44,6 +46,21 @@ niejasnych fragmentów.
 |---|---:|---:|---|---|
 | **M2M100 418M** | tylko przy pierwszym pobraniu | nie | około 100 | Darmowy, lokalny model; pobiera około 2 GB. |
 | **DeepL API** | tak | tak | zgodnie z aktualną ofertą API | Lepszy kontekst i jakość dla obsługiwanych par językowych. |
+
+## Automatyczne wykrywanie sprzętu
+
+Lista urządzeń nie zawiera wpisanych na stałe modeli. Przy każdym uruchomieniu PolySub odczytuje
+prawdziwą nazwę procesora i wszystkich kart graficznych obecnych w komputerze. Można wybrać:
+
+- **Automatycznie — najlepsze dostępne urządzenie**;
+- konkretną wykrytą kartę graficzną;
+- konkretny procesor.
+
+Program osobno sprawdza możliwość użycia urządzenia do M2M100 i do rozpoznawania mowy. Obsługuje
+backendy udostępnione przez zainstalowane środowisko, między innymi CUDA, ROCm i Intel XPU. Jeśli
+wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o tym i proponuje lub
+automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
+powoduje utraty całego zadania — program ponawia operację na procesorze.
 
 Kod projektu ma licencję MIT. Model `facebook/m2m100_418M` jest pobierany osobno z Hugging Face
 i również jest udostępniany na licencji MIT. PolySub nie dołącza modelu ani kluczy API do repozytorium.
@@ -162,9 +179,10 @@ polysub-gui
 3. Sprawdź automatycznie wykryty język i wybierz język docelowy.
 4. Wybierz lokalny model albo DeepL API.
 5. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
-6. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
-7. Rozpocznij tłumaczenie.
-8. Dla filmu możesz następnie kliknąć **Dołącz napisy do filmu — szybko** i wskazać plik wynikowy.
+6. Zostaw **Automatycznie** albo wybierz wykryty procesor lub kartę graficzną.
+7. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
+8. Rozpocznij tłumaczenie.
+9. Dla filmu możesz następnie kliknąć **Dołącz napisy do filmu — szybko** i wskazać plik wynikowy.
 
 Wynik tłumaczenia otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw
 otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowych napisów.

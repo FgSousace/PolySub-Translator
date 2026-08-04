@@ -12,6 +12,16 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import __version__
+from .compute_devices import (
+    AUTO_DEVICE_ID,
+    AUTO_DEVICE_LABEL,
+    ComputeDevice,
+    DeviceResolution,
+    TaskKind,
+    describe_device_support,
+    detect_compute_devices,
+    resolve_compute_device,
+)
 from .detector import detect_language
 from .engines import DeepLEngine, M2M100Engine
 from .languages import language_name, language_options, parse_language_option
@@ -90,8 +100,13 @@ class PolySubApp(tk.Tk):
         self._last_log_message: str | None = None
         self._update_check_running = False
         self._update_download_url: str | None = None
+        self._compute_devices: list[ComputeDevice] = []
+        self._device_label_to_id: dict[str, str] = {}
+        self._selected_device_id = AUTO_DEVICE_ID
+        self._device_detection_running = False
         self._build_style()
         self._build_ui()
+        self.after(200, self._start_device_detection)
         self.after(1200, self._start_update_check)
 
     def _build_style(self) -> None:
@@ -259,8 +274,42 @@ class PolySubApp(tk.Tk):
             anchor="w", padx=28
         )
 
+        compute_frame = ttk.LabelFrame(
+            container,
+            text="5. Urządzenie obliczeniowe",
+            padding=12,
+        )
+        compute_frame.pack(fill="x", pady=(12, 0))
+        compute_frame.columnconfigure(0, weight=1)
+        self.device_var = tk.StringVar(value="Automatycznie — wykrywanie sprzętu…")
+        self.device_combo = ttk.Combobox(
+            compute_frame,
+            textvariable=self.device_var,
+            values=(self.device_var.get(),),
+            state="readonly",
+        )
+        self.device_combo.grid(row=0, column=0, sticky="ew")
+        self.device_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._device_selection_changed(),
+        )
+        self.refresh_devices_button = ttk.Button(
+            compute_frame,
+            text="Odśwież listę sprzętu",
+            command=self._start_device_detection,
+        )
+        self.refresh_devices_button.grid(row=0, column=1, padx=(10, 0))
+        self.device_status_var = tk.StringVar(
+            value="Trwa przygotowywanie automatycznego wykrywania CPU i GPU."
+        )
+        ttk.Label(
+            compute_frame,
+            textvariable=self.device_status_var,
+            wraplength=820,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(7, 0))
+
         context_frame = ttk.LabelFrame(
-            container, text="5. Postacie i kontekst (opcjonalnie)", padding=12
+            container, text="6. Postacie i kontekst (opcjonalnie)", padding=12
         )
         context_frame.pack(fill="both", expand=True, pady=12)
         ttk.Label(
@@ -275,6 +324,110 @@ class PolySubApp(tk.Tk):
         self._build_activity_panel()
         self._build_action_bar()
         self._update_api_state()
+
+    def _start_device_detection(self) -> None:
+        if self._device_detection_running:
+            return
+        self._device_detection_running = True
+        self.refresh_devices_button.configure(state="disabled")
+        self.device_status_var.set(
+            "Wykrywanie prawdziwego procesora, kart graficznych i backendów…"
+        )
+        thread = threading.Thread(target=self._device_detection_worker, daemon=True)
+        thread.start()
+
+    def _device_detection_worker(self) -> None:
+        try:
+            devices = detect_compute_devices()
+        except Exception as exc:
+            self.after(0, self._device_detection_failed, str(exc))
+            return
+        self.after(0, self._device_detection_finished, devices)
+
+    def _device_detection_finished(self, devices: list[ComputeDevice]) -> None:
+        self._device_detection_running = False
+        self.refresh_devices_button.configure(state="normal")
+        self._compute_devices = devices
+        self._device_label_to_id = {AUTO_DEVICE_LABEL: AUTO_DEVICE_ID}
+        self._device_label_to_id.update(
+            {device.display_label: device.id for device in devices}
+        )
+        labels = list(self._device_label_to_id)
+        self.device_combo.configure(values=labels)
+        selected = next(
+            (
+                label
+                for label, device_id in self._device_label_to_id.items()
+                if device_id == self._selected_device_id
+            ),
+            AUTO_DEVICE_LABEL,
+        )
+        self.device_var.set(selected)
+        self._selected_device_id = self._device_label_to_id[selected]
+        self._update_device_description()
+
+    def _device_detection_failed(self, _message: str) -> None:
+        self._device_detection_running = False
+        self.refresh_devices_button.configure(state="normal")
+        self._compute_devices = []
+        self._device_label_to_id = {AUTO_DEVICE_LABEL: AUTO_DEVICE_ID}
+        self.device_combo.configure(values=(AUTO_DEVICE_LABEL,))
+        self.device_var.set(AUTO_DEVICE_LABEL)
+        self._selected_device_id = AUTO_DEVICE_ID
+        self.device_status_var.set(
+            "Nie udało się odczytać listy sprzętu — program bezpiecznie użyje CPU."
+        )
+
+    def _device_selection_changed(self) -> None:
+        self._selected_device_id = self._device_label_to_id.get(
+            self.device_var.get(),
+            AUTO_DEVICE_ID,
+        )
+        self._update_device_description()
+
+    def _update_device_description(self) -> None:
+        prefix = (
+            "DeepL tłumaczy na swoim serwerze. Dla filmu: "
+            if ENGINE_LABELS.get(self.engine_var.get()) == "deepl"
+            else ""
+        )
+        if self._selected_device_id == AUTO_DEVICE_ID:
+            translation = resolve_compute_device(
+                self._compute_devices,
+                AUTO_DEVICE_ID,
+                "translation",
+            )
+            transcription = resolve_compute_device(
+                self._compute_devices,
+                AUTO_DEVICE_ID,
+                "transcription",
+            )
+            self.device_status_var.set(
+                f"{prefix}Auto wybierze do tłumaczenia: {translation.display_name}; "
+                f"do rozpoznawania mowy: {transcription.display_name}."
+            )
+            return
+        selected = next(
+            (
+                device
+                for device in self._compute_devices
+                if device.id == self._selected_device_id
+            ),
+            None,
+        )
+        if selected is None:
+            self.device_status_var.set(
+                f"{prefix}Wybrane urządzenie zniknęło — zostanie użyty tryb Auto."
+            )
+            return
+        self.device_status_var.set(f"{prefix}{describe_device_support(selected)}")
+
+    def _resolve_selected_device(self, task: TaskKind) -> DeviceResolution:
+        return resolve_compute_device(
+            self._compute_devices,
+            self._selected_device_id,
+            task,
+        )
 
     def _start_update_check(self) -> None:
         if self._update_check_running:
@@ -625,16 +778,28 @@ class PolySubApp(tk.Tk):
             f"Sprawdzanie filmu {video_path.name}",
         )
         model_size = SPEECH_MODEL_LABELS[self.speech_model_var.get()]
+        device_resolution = self._resolve_selected_device("transcription")
         thread = threading.Thread(
             target=self._video_import_worker,
-            args=(video_path, model_size),
+            args=(video_path, model_size, device_resolution),
             daemon=True,
         )
         thread.start()
 
-    def _video_import_worker(self, video_path: Path, model_size: str) -> None:
+    def _video_import_worker(
+        self,
+        video_path: Path,
+        model_size: str,
+        device_resolution: DeviceResolution,
+    ) -> None:
         try:
-            importer = VideoSubtitleImporter(model_size=model_size)
+            if device_resolution.fallback_reason:
+                self.after(0, self._video_status, device_resolution.fallback_reason)
+            importer = VideoSubtitleImporter(
+                model_size=model_size,
+                device=device_resolution.runtime_device,
+                device_index=device_resolution.device_index,
+            )
             result = importer.import_video(
                 video_path,
                 status=lambda message: self.after(0, self._video_status, message),
@@ -716,6 +881,8 @@ class PolySubApp(tk.Tk):
     def _update_api_state(self) -> None:
         state = "normal" if ENGINE_LABELS[self.engine_var.get()] == "deepl" else "disabled"
         self.api_entry.configure(state=state)
+        if hasattr(self, "device_status_var"):
+            self._update_device_description()
 
     def _start_translation(self) -> None:
         if self.document is None or self.source_path is None:
@@ -737,12 +904,25 @@ class PolySubApp(tk.Tk):
             messagebox.showwarning("Brak klucza", "Wpisz klucz DeepL API.", parent=self)
             return
 
+        engine_kind = ENGINE_LABELS[self.engine_var.get()]
+        device_resolution = self._resolve_selected_device("translation")
+        if (
+            engine_kind == "local"
+            and self._selected_device_id != AUTO_DEVICE_ID
+            and device_resolution.fallback_reason
+            and not messagebox.askyesno(
+                "Wybrane GPU nie ma zgodnego backendu",
+                f"{device_resolution.fallback_reason}\n\nKontynuować tłumaczenie na CPU?",
+                parent=self,
+            )
+        ):
+            return
+
         self.start_button.configure(state="disabled")
         self.file_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
         self.translated_subtitle_path = None
         self.translated_target_language = None
-        engine_kind = ENGINE_LABELS[self.engine_var.get()]
         api_key = self.api_key_var.get()
         mode = TranslationMode(self.mode_var.get())
         context_notes = self.context_text.get("1.0", "end").strip()
@@ -760,11 +940,23 @@ class PolySubApp(tk.Tk):
                 final_processing_stage,
                 "Gotowe",
             ],
-            "Przygotowywanie silnika tłumaczenia...",
+            (
+                f"Przygotowywanie tłumaczenia na {device_resolution.display_name}..."
+                if engine_kind == "local"
+                else "Łączenie z serwerem DeepL..."
+            ),
         )
         thread = threading.Thread(
             target=self._translation_worker,
-            args=(source, target, engine_kind, api_key, mode, context_notes),
+            args=(
+                source,
+                target,
+                engine_kind,
+                api_key,
+                mode,
+                context_notes,
+                device_resolution,
+            ),
             daemon=True,
         )
         thread.start()
@@ -777,12 +969,16 @@ class PolySubApp(tk.Tk):
         api_key: str,
         mode: TranslationMode,
         context_notes: str,
+        device_resolution: DeviceResolution,
     ) -> None:
         try:
+            if engine_kind == "local" and device_resolution.fallback_reason:
+                self.after(0, self._engine_status, device_resolution.fallback_reason)
             engine = (
                 DeepLEngine(api_key)
                 if engine_kind == "deepl"
                 else M2M100Engine(
+                    device=device_resolution.runtime_device,
                     status=lambda message: self.after(0, self._engine_status, message)
                 )
             )

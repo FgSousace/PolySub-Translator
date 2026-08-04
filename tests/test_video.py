@@ -95,6 +95,73 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
     assert statuses[-1] == "Zapisywanie rozpoznanych napisów SRT..."
 
 
+def test_transcription_uses_selected_gpu_index(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "gpu-dialogue.mp4"
+    video.write_bytes(b"video")
+    monkeypatch.setattr(
+        "polysub.video.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    )
+    segment = SimpleNamespace(start=0.0, end=1.0, text=" Test.", words=[])
+    info = SimpleNamespace(duration=1.0, language="pl")
+    calls = []
+
+    class FakeModel:
+        def transcribe(self, *_args, **_kwargs):
+            return iter([segment]), info
+
+    def model_factory(model_size, **kwargs):
+        calls.append((model_size, kwargs))
+        return FakeModel()
+
+    VideoSubtitleImporter(
+        model_size="small",
+        ffmpeg_executable="ffmpeg",
+        model_factory=model_factory,
+        device="cuda:1",
+    ).import_video(video)
+
+    assert calls[0][1]["device"] == "cuda"
+    assert calls[0][1]["device_index"] == 1
+    assert calls[0][1]["compute_type"] == "float16"
+
+
+def test_transcription_falls_back_to_cpu_after_gpu_error(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "fallback.mp4"
+    video.write_bytes(b"video")
+    monkeypatch.setattr(
+        "polysub.video.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    )
+    segment = SimpleNamespace(start=0.0, end=1.0, text=" Działa.", words=[])
+    info = SimpleNamespace(duration=1.0, language="pl")
+    calls = []
+
+    class FakeModel:
+        def __init__(self, device):
+            self.device = device
+
+        def transcribe(self, *_args, **_kwargs):
+            if self.device == "cuda":
+                raise RuntimeError("brak pamięci GPU")
+            return iter([segment]), info
+
+    def model_factory(_model_size, **kwargs):
+        calls.append(kwargs)
+        return FakeModel(kwargs["device"])
+
+    statuses = []
+    result = VideoSubtitleImporter(
+        ffmpeg_executable="ffmpeg",
+        model_factory=model_factory,
+        device="cuda:0",
+    ).import_video(video, status=statuses.append)
+
+    assert [call["device"] for call in calls] == ["cuda", "cpu"]
+    assert result.document.cues[0].text == "Działa."
+    assert any("przełączanie" in status for status in statuses)
+
+
 def test_video_output_name_and_readable_duration(tmp_path) -> None:
     assert translated_video_subtitle_path(tmp_path / "film.mp4", "PL") == tmp_path / "film.pl.srt"
     assert fast_mux_output_path(tmp_path / "film.mp4", "PL") == (

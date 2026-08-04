@@ -72,6 +72,24 @@ def main() -> None:
         _ = (av, ctranslate2, faster_whisper, onnxruntime)
         return
 
+    if "--self-test-hardware" in sys.argv:
+        from polysub.compute_devices import (
+            AUTO_DEVICE_ID,
+            detect_compute_devices,
+            resolve_compute_device,
+        )
+
+        devices = detect_compute_devices()
+        if not any(device.kind == "cpu" for device in devices):
+            raise RuntimeError("Wykrywanie sprzętu nie znalazło procesora.")
+        if len({device.id for device in devices}) != len(devices):
+            raise RuntimeError("Wykrywanie sprzętu zwróciło powielone identyfikatory.")
+        for task in ("translation", "transcription"):
+            resolution = resolve_compute_device(devices, AUTO_DEVICE_ID, task)
+            if not resolution.runtime_device:
+                raise RuntimeError(f"Tryb Auto nie wybrał urządzenia dla zadania {task}.")
+        return
+
     if "--self-test-gui" in sys.argv:
         from polysub.gui import PolySubApp
 
@@ -85,6 +103,8 @@ def main() -> None:
                 app.activity_log,
                 app.start_button,
                 app.check_update_button,
+                app.device_combo,
+                app.refresh_devices_button,
             )
             if any(not widget.winfo_manager() for widget in required_widgets):
                 raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")

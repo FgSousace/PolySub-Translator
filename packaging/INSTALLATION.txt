@@ -18,6 +18,10 @@ tłumaczenia używają już modelu zapisanego na komputerze.
 Program po uruchomieniu sprawdza w tle, czy na GitHubie jest nowsza wersja.
 Aktualizacja jest pobierana tylko po kliknięciu przycisku przez użytkownika.
 
+W sekcji „Urządzenie obliczeniowe” program sam wyświetla procesor i karty
+graficzne wykryte na komputerze. Najbezpieczniej zostawić ustawienie
+„Automatycznie”, które wybiera zgodny backend i w razie problemu używa CPU.
+
 OSTRZEŻENIE WINDOWS SMARTSCREEN
 -------------------------------
 
