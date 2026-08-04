@@ -15,6 +15,9 @@ PIERWSZE URUCHOMIENIE
 Tryb lokalny może przy pierwszym użyciu pobrać model tłumaczeniowy. Kolejne
 tłumaczenia używają już modelu zapisanego na komputerze.
 
+Program po uruchomieniu sprawdza w tle, czy na GitHubie jest nowsza wersja.
+Aktualizacja jest pobierana tylko po kliknięciu przycisku przez użytkownika.
+
 OSTRZEŻENIE WINDOWS SMARTSCREEN
 -------------------------------
 

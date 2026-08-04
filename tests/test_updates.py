@@ -1,0 +1,95 @@
+from types import SimpleNamespace
+
+import pytest
+import requests
+
+from polysub.updates import (
+    RELEASE_PAGE_URL,
+    UpdateCheckError,
+    check_for_updates,
+    is_newer_version,
+    normalize_version,
+)
+
+
+class FakeSession:
+    def __init__(self, payload=None, error=None) -> None:
+        self.payload = payload
+        self.error = error
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        if self.error:
+            raise self.error
+        return SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: self.payload,
+        )
+
+
+def test_semantic_versions_are_compared_numerically() -> None:
+    assert normalize_version("v0.4.4") == "0.4.4"
+    assert is_newer_version("0.10.0", "0.9.9")
+    assert not is_newer_version("0.4.3", "0.4.3")
+
+
+def test_update_check_returns_direct_setup_download() -> None:
+    installer = (
+        "https://github.com/FgSousace/PolySub-Translator/"
+        "releases/download/v0.4.4/PolySub-Translator-Setup.exe"
+    )
+    session = FakeSession(
+        {
+            "tag_name": "v0.4.4",
+            "html_url": "https://github.com/FgSousace/PolySub-Translator/releases/tag/v0.4.4",
+            "assets": [
+                {
+                    "name": "PolySub-Translator-Setup.exe",
+                    "browser_download_url": installer,
+                }
+            ],
+        }
+    )
+
+    result = check_for_updates("0.4.3", session=session)
+
+    assert result.update_available
+    assert result.latest_version == "0.4.4"
+    assert result.installer_url == installer
+    assert session.calls[0][1]["timeout"] == 8.0
+
+
+def test_untrusted_download_url_falls_back_to_release_page() -> None:
+    session = FakeSession(
+        {
+            "tag_name": "v0.4.3",
+            "html_url": "https://example.com/fake-release",
+            "assets": [
+                {
+                    "name": "PolySub-Translator-Setup.exe",
+                    "browser_download_url": "https://example.com/fake.exe",
+                }
+            ],
+        }
+    )
+
+    result = check_for_updates("0.4.3", session=session)
+
+    assert not result.update_available
+    assert result.release_url == RELEASE_PAGE_URL
+    assert result.installer_url == RELEASE_PAGE_URL
+
+
+def test_network_error_is_reported_as_update_error() -> None:
+    session = FakeSession(error=requests.ConnectionError("offline"))
+
+    with pytest.raises(UpdateCheckError, match="Nie udało się sprawdzić"):
+        check_for_updates("0.4.3", session=session)
+
+
+def test_invalid_release_version_is_rejected() -> None:
+    session = FakeSession({"tag_name": "latest", "assets": []})
+
+    with pytest.raises(UpdateCheckError, match="Nieprawidłowy numer wersji"):
+        check_for_updates("0.4.3", session=session)

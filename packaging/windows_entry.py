@@ -84,6 +84,7 @@ def main() -> None:
                 app.progress_bar,
                 app.activity_log,
                 app.start_button,
+                app.check_update_button,
             )
             if any(not widget.winfo_manager() for widget in required_widgets):
                 raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")

@@ -1,4 +1,12 @@
-## Nowości w wersji 0.4.3
+## Nowości w wersji 0.4.4
+
+- program automatycznie sprawdza w tle najnowsze wydanie po uruchomieniu;
+- przycisk **Sprawdź aktualizacje** pozwala powtórzyć sprawdzenie w dowolnym momencie;
+- gdy pojawi się nowsza wersja, program pokazuje numer zainstalowanej i najnowszej wersji;
+- przycisk pobierania prowadzi bezpośrednio do oficjalnego instalatora z GitHub Releases;
+- aktualizacje nie instalują się ani nie uruchamiają bez zgody użytkownika.
+
+## Wcześniej dodane w wersji 0.4.3
 
 - dwa poziome paski: liczba ukończonych etapów i postęp bieżącej czynności;
 - dziennik pokazujący ładowanie modeli, wykrywanie języka, tłumaczenie, kontrolę i zapis;

@@ -5,17 +5,20 @@ import os
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from . import __version__
 from .detector import detect_language
 from .engines import DeepLEngine, M2M100Engine
 from .languages import language_name, language_options, parse_language_option
 from .models import TranslationMode
 from .service import TranslationOptions, TranslationService
 from .subtitles import SRTDocument, default_output_path
+from .updates import UpdateCheckError, UpdateInfo, check_for_updates
 from .video import (
     VIDEO_EXTENSIONS,
     VideoImportResult,
@@ -85,8 +88,11 @@ class PolySubApp(tk.Tk):
         self._activity_started_at = 0.0
         self._heartbeat_job: str | None = None
         self._last_log_message: str | None = None
+        self._update_check_running = False
+        self._update_download_url: str | None = None
         self._build_style()
         self._build_ui()
+        self.after(1200, self._start_update_check)
 
     def _build_style(self) -> None:
         style = ttk.Style(self)
@@ -136,7 +142,32 @@ class PolySubApp(tk.Tk):
         ttk.Label(
             container,
             text="Wykrywa język, tłumaczy napisy i nie zmienia timestampów.",
-        ).pack(anchor="w", pady=(2, 20))
+        ).pack(anchor="w", pady=(2, 5))
+
+        version_frame = ttk.Frame(container)
+        version_frame.pack(fill="x", pady=(0, 16))
+        version_frame.columnconfigure(0, weight=1)
+        self.version_status_var = tk.StringVar(
+            value=f"Wersja {__version__} • automatyczne sprawdzanie aktualizacji"
+        )
+        ttk.Label(version_frame, textvariable=self.version_status_var).grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+        self.download_update_button = ttk.Button(
+            version_frame,
+            text="Pobierz aktualizację",
+            command=self._open_update_download,
+        )
+        self.download_update_button.grid(row=0, column=1, sticky="e", padx=(10, 6))
+        self.download_update_button.grid_remove()
+        self.check_update_button = ttk.Button(
+            version_frame,
+            text="Sprawdź aktualizacje",
+            command=self._start_update_check,
+        )
+        self.check_update_button.grid(row=0, column=2, sticky="e")
 
         file_frame = ttk.LabelFrame(container, text="1. Napisy lub film", padding=14)
         file_frame.pack(fill="x")
@@ -244,6 +275,66 @@ class PolySubApp(tk.Tk):
         self._build_activity_panel()
         self._build_action_bar()
         self._update_api_state()
+
+    def _start_update_check(self) -> None:
+        if self._update_check_running:
+            return
+        self._update_check_running = True
+        self.check_update_button.configure(state="disabled")
+        self.version_status_var.set(f"Wersja {__version__} • sprawdzanie aktualizacji…")
+        thread = threading.Thread(target=self._update_check_worker, daemon=True)
+        thread.start()
+
+    def _update_check_worker(self) -> None:
+        try:
+            update_info = check_for_updates(__version__)
+        except UpdateCheckError as exc:
+            self.after(0, self._update_check_failed, str(exc))
+            return
+        self.after(0, self._update_check_finished, update_info)
+
+    def _update_check_finished(self, update_info: UpdateInfo) -> None:
+        self._update_check_running = False
+        self.check_update_button.configure(state="normal")
+        if update_info.update_available:
+            self._update_download_url = update_info.installer_url
+            self.version_status_var.set(
+                f"Aktualizacja dostępna: {update_info.latest_version} "
+                f"• zainstalowana {update_info.current_version}"
+            )
+            self.download_update_button.configure(
+                text=f"Pobierz wersję {update_info.latest_version}"
+            )
+            self.download_update_button.grid()
+            return
+
+        self._update_download_url = None
+        self.download_update_button.grid_remove()
+        self.version_status_var.set(f"Wersja {__version__} jest aktualna")
+
+    def _update_check_failed(self, _message: str) -> None:
+        self._update_check_running = False
+        self.check_update_button.configure(state="normal")
+        self._update_download_url = None
+        self.download_update_button.grid_remove()
+        self.version_status_var.set(
+            f"Wersja {__version__} • nie udało się sprawdzić aktualizacji"
+        )
+
+    def _open_update_download(self) -> None:
+        if self._update_download_url is None:
+            return
+        try:
+            opened = webbrowser.open(self._update_download_url)
+        except webbrowser.Error:
+            opened = False
+        if not opened:
+            messagebox.showwarning(
+                "Nie udało się otworzyć pobierania",
+                "Otwórz stronę najnowszej wersji w przeglądarce:\n\n"
+                "https://github.com/FgSousace/PolySub-Translator/releases/latest",
+                parent=self,
+            )
 
     def _build_action_bar(self) -> None:
         action_frame = ttk.Frame(self, padding=(24, 10, 24, 16))

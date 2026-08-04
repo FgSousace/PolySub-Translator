@@ -8,7 +8,7 @@ kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokaln
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.3-alpha` — szczegółowy panel postępu, responsywny interfejs, SRT i obsługa filmów.
+> Status: `v0.4.4-alpha` — sprawdzanie aktualizacji, szczegółowy postęp, SRT i obsługa filmów.
 
 ## Najważniejsze funkcje
 
@@ -22,6 +22,7 @@ niejasnych fragmentów.
 - dwa paski postępu: wszystkie etapy operacji oraz dokładny postęp bieżącego etapu;
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
 - przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
+- automatyczne sprawdzanie najnowszej wersji oraz ręczny przycisk pobrania aktualizacji;
 - nienaruszalne identyfikatory i timestampy;
 - zapis awaryjny i automatyczne wznowienie przerwanego zadania;
 - informacje o postaciach, płci, relacjach i stylu jako dodatkowy kontekst;
@@ -92,6 +93,10 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 Przy kolejnych uruchomieniach klikaj skrót **PolySub Translator** na pulpicie albo w menu Start.
 Instalator działa dla bieżącego użytkownika i nie wymaga uprawnień administratora.
+
+Po uruchomieniu program dyskretnie sprawdza najnowsze wydanie na GitHubie. Jeśli jest dostępna
+nowsza wersja, pokaże jej numer i przycisk **Pobierz wersję…**. Instalator nigdy nie uruchamia się
+sam — pobieranie rozpoczyna się dopiero po kliknięciu przycisku przez użytkownika.
 
 > Windows może pokazać ostrzeżenie SmartScreen, ponieważ projekt nie ma jeszcze płatnego
 > certyfikatu podpisu kodu. Wybierz **Więcej informacji → Uruchom mimo to**. Kod instalatora,
