@@ -4,8 +4,10 @@ import pytest
 
 from polysub.video import (
     VideoMuxError,
+    VideoSubtitleBurner,
     VideoSubtitleImporter,
     VideoSubtitleMuxer,
+    burned_video_output_path,
     fast_mux_output_path,
     format_media_duration,
     translated_video_subtitle_path,
@@ -49,6 +51,7 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
         "polysub.video.subprocess.run",
         lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
     )
+    monkeypatch.setattr("polysub.performance.os.cpu_count", lambda: 16)
 
     words = [
         SimpleNamespace(start=0.5, end=0.9, word=" Hello"),
@@ -76,6 +79,7 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
         model_size="small",
         ffmpeg_executable="ffmpeg",
         model_factory=model_factory,
+        cpu_usage_limit=50,
     ).import_video(
         video,
         progress=lambda done, total: updates.append((done, total)),
@@ -85,6 +89,8 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
     assert model_calls[0][0] == "small"
     assert model_calls[0][1]["device"] == "cpu"
     assert model_calls[0][1]["compute_type"] == "int8"
+    assert model_calls[0][1]["cpu_threads"] == 8
+    assert model_calls[0][1]["num_workers"] == 1
     assert result.method == "transcribed"
     assert result.detected_language == "en"
     assert result.subtitle_path == tmp_path / "dialogue.transcribed.srt"
@@ -169,6 +175,9 @@ def test_video_output_name_and_readable_duration(tmp_path) -> None:
     )
     assert fast_mux_output_path(tmp_path / "film.webm", "PL") == (
         tmp_path / "film.pl.subtitled.mkv"
+    )
+    assert burned_video_output_path(tmp_path / "film.mkv", "PL") == (
+        tmp_path / "film.pl.burned.mp4"
     )
     assert format_media_duration(65) == "1 min 05 s"
     assert format_media_duration(3661) == "1 godz. 01 min 01 s"
@@ -261,3 +270,107 @@ def test_fast_mux_removes_partial_file_when_ffmpeg_fails(tmp_path, monkeypatch) 
 
     assert not (tmp_path / "movie.pl.subtitled.mp4").exists()
     assert not (tmp_path / ".movie.pl.subtitled.tmp.mp4").exists()
+
+
+def test_burn_falls_back_from_nvidia_to_cpu_and_reports_progress(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    video = tmp_path / "movie.mp4"
+    video.write_bytes(b"original video")
+    subtitles = tmp_path / "movie.pl.srt"
+    subtitles.write_text(SAMPLE_SRT, encoding="utf-8")
+    monkeypatch.setattr("polysub.performance.os.cpu_count", lambda: 16)
+    burner = VideoSubtitleBurner(
+        ffmpeg_executable="ffmpeg",
+        cpu_usage_limit=50,
+    )
+    monkeypatch.setattr(
+        burner,
+        "_available_encoders",
+        lambda _ffmpeg: {"h264_nvenc", "libx264"},
+    )
+    monkeypatch.setattr(burner, "_probe_duration", lambda _ffmpeg, _video: 10.0)
+    encoders = []
+    progress_updates = []
+
+    def fake_run(command, *, duration, progress):
+        encoder = command[command.index("-c:v") + 1]
+        encoders.append(encoder)
+        progress(5.0, duration)
+        if encoder == "h264_nvenc":
+            return 1, "brak zgodnego urządzenia"
+        with open(command[-1], "wb") as handle:
+            handle.write(b"burned video")
+        return 0, ""
+
+    monkeypatch.setattr(burner, "_run_with_progress", fake_run)
+    statuses = []
+    result = burner.burn(
+        video,
+        subtitles,
+        target_language="pl",
+        preferred_vendor="NVIDIA",
+        status=statuses.append,
+        progress=lambda done, total: progress_updates.append((done, total)),
+    )
+
+    assert encoders == ["h264_nvenc", "libx264"]
+    assert result.output_path == tmp_path / "movie.pl.burned.mp4"
+    assert result.output_path.read_bytes() == b"burned video"
+    assert result.encoder == "CPU (x264)"
+    assert result.hardware_accelerated is False
+    assert progress_updates[-1] == (10.0, 10.0)
+    assert any("trybu CPU" in status for status in statuses)
+
+
+def test_burn_uses_selected_hardware_encoder_and_cpu_thread_limit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    video = tmp_path / "movie.mp4"
+    video.write_bytes(b"video")
+    subtitles = tmp_path / "movie.pl.srt"
+    subtitles.write_text(SAMPLE_SRT, encoding="utf-8")
+    monkeypatch.setattr("polysub.performance.os.cpu_count", lambda: 16)
+    burner = VideoSubtitleBurner(
+        ffmpeg_executable="ffmpeg",
+        cpu_usage_limit=75,
+    )
+    monkeypatch.setattr(
+        burner,
+        "_available_encoders",
+        lambda _ffmpeg: {"h264_nvenc", "h264_qsv", "libx264"},
+    )
+    monkeypatch.setattr(burner, "_probe_duration", lambda _ffmpeg, _video: 1.0)
+    commands = []
+
+    def fake_run(command, *, duration, progress):
+        commands.append(command)
+        with open(command[-1], "wb") as handle:
+            handle.write(b"gpu video")
+        return 0, ""
+
+    monkeypatch.setattr(burner, "_run_with_progress", fake_run)
+    result = burner.burn(
+        video,
+        subtitles,
+        target_language="pl",
+        preferred_vendor="NVIDIA",
+    )
+
+    command = commands[0]
+    assert command[command.index("-c:v") + 1] == "h264_nvenc"
+    assert command[command.index("-filter_threads") + 1] == "12"
+    assert "subtitles=filename=" in command[command.index("-vf") + 1]
+    assert result.hardware_accelerated is True
+    assert result.encoder == "NVIDIA NVENC"
+
+
+def test_burn_respects_manual_cpu_choice() -> None:
+    burner = VideoSubtitleBurner(ffmpeg_executable="ffmpeg")
+
+    assert burner._encoder_candidates(
+        {"h264_nvenc", "h264_qsv", "h264_amf", "libx264"},
+        "CPU",
+    ) == ["libx264"]

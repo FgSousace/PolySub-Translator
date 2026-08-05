@@ -31,15 +31,46 @@ class FakeTokenizer:
 
 
 def _install_fake_modules(monkeypatch, model_class) -> None:
+    thread_calls = []
     torch = ModuleType("torch")
     torch.cuda = SimpleNamespace(is_available=lambda: True)
     torch.xpu = SimpleNamespace(is_available=lambda: False)
     torch.inference_mode = nullcontext
+    torch.set_num_threads = lambda value: thread_calls.append(("intra", value))
+    torch.set_num_interop_threads = lambda value: thread_calls.append(("interop", value))
     transformers = ModuleType("transformers")
     transformers.M2M100ForConditionalGeneration = model_class
     transformers.M2M100Tokenizer = FakeTokenizer
     monkeypatch.setitem(sys.modules, "torch", torch)
     monkeypatch.setitem(sys.modules, "transformers", transformers)
+    return thread_calls
+
+
+def test_cpu_limit_configures_real_torch_threads_and_larger_batch(monkeypatch) -> None:
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, _model_name):
+            return cls()
+
+        def to(self, _device):
+            return self
+
+        def eval(self):
+            return self
+
+    monkeypatch.setattr("polysub.performance.os.cpu_count", lambda: 16)
+    thread_calls = _install_fake_modules(monkeypatch, FakeModel)
+    statuses = []
+
+    engine = M2M100Engine(
+        device="cpu",
+        cpu_usage_limit=100,
+        status=statuses.append,
+    )
+
+    assert thread_calls == [("intra", 16), ("interop", 1)]
+    assert engine.max_batch_size == 16
+    assert any("16 z 16 logicznych wątków" in status for status in statuses)
 
 
 def test_model_loading_falls_back_to_cpu_when_selected_gpu_fails(monkeypatch) -> None:

@@ -22,6 +22,22 @@ W sekcji „Urządzenie obliczeniowe” program sam wyświetla procesor i karty
 graficzne wykryte na komputerze. Najbezpieczniej zostawić ustawienie
 „Automatycznie”, które wybiera zgodny backend i w razie problemu używa CPU.
 
+Sekcja „Wykorzystanie procesora” pozwala wybrać 25%, 50%, 75% albo 100%
+logicznych wątków. Ustawienie 100% daje lokalnym modelom maksymalną dostępną
+wydajność, ale nie zmienia jakości tłumaczenia.
+
+Po tłumaczeniu filmu dostępne są dwa osobne przyciski:
+- „Dodaj przełączaną ścieżkę — szybko” nie przelicza obrazu;
+- „Wypal napisy na obrazie — TV” zapisuje napisy na stałe w każdej klatce.
+
+Wypalanie trwa dłużej, ponieważ wymaga ponownego kodowania. Program próbuje
+najpierw NVIDIA NVENC, Intel Quick Sync albo AMD AMF, a w razie problemu
+automatycznie przechodzi na CPU. Zawsze tworzy osobny film i nie zmienia oryginału.
+
+Pakiet zawiera środowisko NVIDIA CUDA 12.6 i cuDNN 9 przygotowane również dla
+kart z generacji RTX 20, w tym RTX 2080. Wymagany jest aktualny sterownik NVIDIA.
+Bez zgodnego sterownika program bezpiecznie wykona zadanie na CPU.
+
 OSTRZEŻENIE WINDOWS SMARTSCREEN
 -------------------------------
 

@@ -17,7 +17,7 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +31,10 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
+          python -m pip install "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu126
           python -m pip install -e ".[local,fasttext,video,build]"
+          python -c "import torch; assert torch.version.cuda == '12.6', torch.version.cuda"
+          python -m pip cache purge
 
       - name: Ensure Inno Setup is available
         shell: pwsh
@@ -55,6 +58,8 @@ jobs:
             "--version",
             "--self-test-video",
             "--self-test-hardware",
+            "--self-test-performance",
+            "--self-test-nvidia-runtime",
             "--self-test-gui"
           )) {
             $process = Start-Process `
@@ -97,6 +102,8 @@ jobs:
             "--version",
             "--self-test-video",
             "--self-test-hardware",
+            "--self-test-performance",
+            "--self-test-nvidia-runtime",
             "--self-test-gui"
           )) {
             $process = Start-Process `

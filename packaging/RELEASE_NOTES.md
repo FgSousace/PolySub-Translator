@@ -1,4 +1,23 @@
-## Nowości w wersji 0.4.5
+## Nowości w wersji 0.4.6
+
+- nowy przycisk **Wypal napisy na obrazie — TV** tworzy film, w którym napisy są na stałe
+  częścią każdej klatki i nie trzeba włączać ich w odtwarzaczu;
+- dotychczasowa szybka, przełączana ścieżka pozostaje dostępna jako osobna opcja i nadal nie
+  przelicza obrazu ani dźwięku;
+- wypalanie automatycznie próbuje NVIDIA NVENC, Intel Quick Sync i AMD AMF, a gdy sprzętowy koder
+  nie zadziała, bezpiecznie ponawia operację przez CPU;
+- pasek pokazuje rzeczywisty czas przetworzonego filmu podczas wypalania;
+- ustawienie **Wykorzystanie procesora** pozwala wybrać 25%, 50%, 75% albo 100% logicznych wątków;
+- lokalne M2M100 i Whisper otrzymują prawdziwą liczbę wątków, a większe partie tłumaczenia lepiej
+  wykorzystują wielordzeniowe procesory bez zmiany jakości modelu;
+- instalator zawiera PyTorch z CUDA 12.6 oraz cuDNN 9, dzięki czemu obsługuje również RTX 2080
+  i inne zgodne karty NVIDIA ze zaktualizowanym sterownikiem;
+- gotowy instalator przechodzi dodatkowe testy wykorzystania CPU, bibliotek NVIDIA oraz wypalania
+  napisów przed publikacją.
+
+Wydania 0.4.5 i 0.4.4 pozostają dostępne osobno w historii GitHub Releases i nie są usuwane.
+
+## Wcześniej dodane w wersji 0.4.5
 
 - dynamiczna lista pokazuje prawdziwy model procesora i wszystkie wykryte karty graficzne;
 - tryb **Automatycznie** osobno wybiera najlepsze urządzenie do tłumaczenia i rozpoznawania mowy;

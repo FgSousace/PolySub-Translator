@@ -11,6 +11,13 @@ the following separately licensed components:
   are available by running `ffmpeg -L`. FFmpeg source and license information:
   https://ffmpeg.org/download.html and https://ffmpeg.org/legal.html
 - **ONNX Runtime** — MIT License — https://github.com/microsoft/onnxruntime
+- **PyTorch** — BSD-style License — https://github.com/pytorch/pytorch
+- **NVIDIA CUDA runtime libraries** — NVIDIA CUDA Toolkit End User License Agreement —
+  https://docs.nvidia.com/cuda/eula/
+- **NVIDIA cuDNN runtime libraries** — NVIDIA cuDNN Software License Agreement —
+  https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html
+- **libass** (used by FFmpeg for permanent subtitle rendering when present in the bundled build)
+  — ISC License — https://github.com/libass/libass
 
 Downloaded speech-recognition and translation model weights remain subject to the licenses shown
 on their respective Hugging Face model pages. PolySub does not bundle those model weights in the

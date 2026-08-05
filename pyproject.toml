@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "polysub-translator"
-version = "0.4.5"
+version = "0.4.6"
 description = "Context-aware multilingual subtitle translator with automatic language detection and interactive review."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,7 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 local = [
   "sentencepiece>=0.2,<1",
-  "torch>=2.2",
+  "torch>=2.12.1,<2.13",
   "transformers>=4.44,<6",
 ]
 fasttext = ["fasttext-wheel>=0.9.2,<1"]

@@ -8,14 +8,18 @@ from pathlib import Path
 from .detector import LanguageDetectionError, detect_language
 from .engines import DeepLEngine, M2M100Engine, TranslationEngineError
 from .models import TranslationMode
+from .performance import CPU_USAGE_OPTIONS, DEFAULT_CPU_USAGE
 from .service import TranslationOptions, TranslationService
 from .subtitles import SRTDocument, SubtitleFormatError, default_output_path
 from .video import (
     VIDEO_EXTENSIONS,
+    VideoBurnError,
     VideoImportError,
     VideoMuxError,
+    VideoSubtitleBurner,
     VideoSubtitleImporter,
     VideoSubtitleMuxer,
+    burned_video_output_path,
     fast_mux_output_path,
     format_media_duration,
     translated_video_subtitle_path,
@@ -56,14 +60,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model Whisper używany tylko wtedy, gdy film nie ma tekstowych napisów",
     )
     parser.add_argument(
+        "--cpu-limit",
+        type=int,
+        choices=CPU_USAGE_OPTIONS,
+        default=DEFAULT_CPU_USAGE,
+        help="Maksymalna część logicznych wątków CPU: 25, 50, 75 albo 100%%",
+    )
+    video_output_mode = parser.add_mutually_exclusive_group()
+    video_output_mode.add_argument(
         "--attach-to-video",
         action="store_true",
         help="Po tłumaczeniu szybko dołącz SRT do filmu bez ponownego kodowania",
     )
+    video_output_mode.add_argument(
+        "--burn-into-video",
+        action="store_true",
+        help="Wypal napisy na obrazie filmu, próbując najpierw akceleracji sprzętowej",
+    )
     parser.add_argument(
         "--video-output",
         type=Path,
-        help="Opcjonalna ścieżka filmu .mp4 lub .mkv z dołączonymi napisami",
+        help="Opcjonalna ścieżka filmu .mp4 lub .mkv z gotowymi napisami",
     )
     parser.add_argument("--gui", action="store_true", help="Uruchom interfejs graficzny")
     return parser
@@ -82,7 +99,10 @@ def main(argv: list[str] | None = None) -> int:
         media_path: Path | None = None
         if args.input.suffix.lower() in VIDEO_EXTENSIONS:
             media_path = args.input
-            imported = VideoSubtitleImporter(model_size=args.speech_model).import_video(
+            imported = VideoSubtitleImporter(
+                model_size=args.speech_model,
+                cpu_usage_limit=args.cpu_limit,
+            ).import_video(
                 args.input,
                 status=lambda message: print(message),
                 progress=_console_media_progress,
@@ -104,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         context_notes = ""
         if args.context_file:
             context_notes = args.context_file.read_text(encoding="utf-8")
-        engine = _create_engine(args.engine)
+        engine = _create_engine(args.engine, cpu_usage_limit=args.cpu_limit)
         mode = TranslationMode(args.mode)
         output = args.output or (
             translated_video_subtitle_path(media_path, target)
@@ -150,12 +170,28 @@ def main(argv: list[str] | None = None) -> int:
                 output_path=video_output,
             )
             print(f"Film z napisami: {attached}")
+        elif args.burn_into_video:
+            if media_path is None:
+                raise VideoBurnError("Opcja --burn-into-video wymaga filmu wejściowego.")
+            video_output = args.video_output or burned_video_output_path(media_path, target)
+            print("Wypalanie napisów na obrazie filmu...")
+            burned = VideoSubtitleBurner(cpu_usage_limit=args.cpu_limit).burn(
+                media_path,
+                output,
+                target_language=target,
+                output_path=video_output,
+                status=print,
+                progress=_console_media_progress,
+            )
+            print()
+            print(f"Film z trwałymi napisami: {burned.output_path} ({burned.encoder})")
         return 0
     except (
         OSError,
         SubtitleFormatError,
         LanguageDetectionError,
         TranslationEngineError,
+        VideoBurnError,
         VideoImportError,
         VideoMuxError,
     ) as exc:
@@ -163,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-def _create_engine(name: str):
+def _create_engine(name: str, *, cpu_usage_limit: int = DEFAULT_CPU_USAGE):
     if name == "deepl":
         if not os.getenv("DEEPL_API_KEY"):
             raise TranslationEngineError(
@@ -171,7 +207,7 @@ def _create_engine(name: str):
             )
         return DeepLEngine()
     print("Wczytywanie lokalnego modelu (pierwsze uruchomienie pobiera około 2 GB)...")
-    return M2M100Engine()
+    return M2M100Engine(cpu_usage_limit=cpu_usage_limit)
 
 
 def _ask_target() -> str:

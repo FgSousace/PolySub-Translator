@@ -20,7 +20,7 @@ def main() -> None:
         import imageio_ffmpeg
         import onnxruntime
 
-        from polysub.video import VideoSubtitleMuxer
+        from polysub.video import VideoSubtitleBurner, VideoSubtitleMuxer
 
         ffmpeg_executable = Path(imageio_ffmpeg.get_ffmpeg_exe())
         if not ffmpeg_executable.is_file():
@@ -31,6 +31,7 @@ def main() -> None:
             source_video = temporary / "source.mp4"
             subtitles = temporary / "source.pl.srt"
             output_video = temporary / "source.pl.subtitled.mp4"
+            burned_video = temporary / "source.pl.burned.mp4"
             subtitles.write_text(
                 "1\n00:00:00,000 --> 00:00:00,800\nTest napisów.\n",
                 encoding="utf-8",
@@ -67,9 +68,52 @@ def main() -> None:
             )
             if not result.is_file() or result.stat().st_size == 0:
                 raise RuntimeError("Test szybkiego dołączania napisów nie utworzył filmu.")
+            burned = VideoSubtitleBurner(
+                ffmpeg_executable=str(ffmpeg_executable),
+            ).burn(
+                source_video,
+                subtitles,
+                target_language="pl",
+                output_path=burned_video,
+                preferred_vendor="CPU",
+            )
+            if not burned.output_path.is_file() or burned.output_path.stat().st_size == 0:
+                raise RuntimeError("Test wypalania napisów nie utworzył filmu.")
 
         # Validate the bundled video stack without downloading a speech model.
         _ = (av, ctranslate2, faster_whisper, onnxruntime)
+        return
+
+    if "--self-test-performance" in sys.argv:
+        import torch
+
+        from polysub.performance import configure_torch_threads, cpu_allocation
+
+        allocation = cpu_allocation(100)
+        configure_torch_threads(torch, allocation)
+        if torch.get_num_threads() != allocation.threads:
+            raise RuntimeError(
+                "PyTorch nie zastosował pełnej liczby wybranych wątków procesora."
+            )
+        return
+
+    if "--self-test-nvidia-runtime" in sys.argv:
+        import ctranslate2
+        import torch
+
+        cuda_version = getattr(torch.version, "cuda", None)
+        if not cuda_version or not str(cuda_version).startswith("12.6"):
+            raise RuntimeError(
+                f"Pakiet nie zawiera oczekiwanego środowiska CUDA 12.6: {cuda_version!r}."
+            )
+        torch_lib = Path(torch.__file__).resolve().parent / "lib"
+        required_libraries = ("cublas64_12.dll", "cudnn64_9.dll")
+        missing = [name for name in required_libraries if not (torch_lib / name).is_file()]
+        if missing:
+            raise RuntimeError(
+                "W pakiecie NVIDIA brakuje bibliotek: " + ", ".join(missing)
+            )
+        _ = ctranslate2
         return
 
     if "--self-test-hardware" in sys.argv:
@@ -105,6 +149,8 @@ def main() -> None:
                 app.check_update_button,
                 app.device_combo,
                 app.refresh_devices_button,
+                app.cpu_usage_combo,
+                app.burn_button,
             )
             if any(not widget.winfo_manager() for widget in required_widgets):
                 raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")

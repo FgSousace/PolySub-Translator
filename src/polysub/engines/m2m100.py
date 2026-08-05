@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from ..performance import (
+    DEFAULT_CPU_USAGE,
+    configure_thread_environment,
+    configure_torch_threads,
+    cpu_allocation,
+    translation_batch_size,
+)
 from .base import TranslationEngine, TranslationEngineError
 
 StatusCallback = Callable[[str], None]
@@ -19,10 +26,13 @@ class M2M100Engine(TranslationEngine):
         device: str | None = None,
         status: StatusCallback | None = None,
         allow_cpu_fallback: bool = True,
+        cpu_usage_limit: int = DEFAULT_CPU_USAGE,
     ) -> None:
         status = status or (lambda _message: None)
         self._status = status
         self._allow_cpu_fallback = allow_cpu_fallback
+        self._cpu_allocation = cpu_allocation(cpu_usage_limit)
+        configure_thread_environment(self._cpu_allocation)
         status("Ładowanie bibliotek lokalnego AI...")
         try:
             import torch
@@ -33,8 +43,15 @@ class M2M100Engine(TranslationEngine):
             ) from exc
 
         self._torch = torch
+        configure_torch_threads(torch, self._cpu_allocation)
         self.device = device or self._automatic_torch_device()
         status(f"Urządzenie obliczeniowe: {self.device.upper()}.")
+        status(
+            "Limit CPU: "
+            f"{self._cpu_allocation.threads} z "
+            f"{self._cpu_allocation.logical_processors} logicznych wątków "
+            f"({self._cpu_allocation.percentage}%)."
+        )
         try:
             status("Pobieranie lub odczytywanie tokenizera M2M100...")
             self.tokenizer = M2M100Tokenizer.from_pretrained(model_name)
@@ -45,6 +62,7 @@ class M2M100Engine(TranslationEngine):
                 f"Nie udało się wczytać modelu {model_name}: {exc}"
             ) from exc
         self._move_model_to_selected_device()
+        self.max_batch_size = translation_batch_size(self._cpu_allocation, self.device)
         self.model.eval()
         status("Lokalny model AI jest gotowy.")
 
@@ -85,6 +103,10 @@ class M2M100Engine(TranslationEngine):
                     "Automatyczne przełączanie na CPU..."
                 )
                 self.device = "cpu"
+                self.max_batch_size = translation_batch_size(
+                    self._cpu_allocation,
+                    self.device,
+                )
                 try:
                     self.model.to("cpu")
                     generated = self._generate(encoded_on_cpu, target_id, accurate)
@@ -125,6 +147,10 @@ class M2M100Engine(TranslationEngine):
                 "Automatyczne przełączanie na CPU..."
             )
             self.device = "cpu"
+            self.max_batch_size = translation_batch_size(
+                self._cpu_allocation,
+                self.device,
+            )
             try:
                 self.model.to("cpu")
             except Exception as cpu_exc:

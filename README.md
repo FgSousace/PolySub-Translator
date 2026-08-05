@@ -8,7 +8,7 @@ kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokaln
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.5-alpha` — automatyczny wybór sprzętu, aktualizacje, SRT i obsługa filmów.
+> Status: `v0.4.6-alpha` — trwałe napisy do TV, pełne użycie CPU i obsługa CUDA dla RTX 2080.
 
 ## Najważniejsze funkcje
 
@@ -17,10 +17,12 @@ niejasnych fragmentów.
 - wyciąganie pierwszej tekstowej ścieżki napisów z filmu;
 - lokalne rozpoznawanie mowy przez Whisper, gdy film nie zawiera napisów;
 - szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
+- wypalanie napisów na stałe w obrazie filmu z automatyczną akceleracją NVIDIA, Intel lub AMD;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
 - lokalny model M2M100 lub DeepL API;
 - dynamiczna lista rzeczywiście wykrytych procesorów i kart NVIDIA, AMD oraz Intel;
 - tryb Auto wybierający najlepszy zgodny backend z bezpiecznym powrotem na CPU;
+- wybór limitu 25%, 50%, 75% albo 100% logicznych wątków procesora;
 - dwa paski postępu: wszystkie etapy operacji oraz dokładny postęp bieżącego etapu;
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
 - przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
@@ -62,6 +64,17 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
+W instalatorze Windows 0.4.6 znajduje się środowisko PyTorch CUDA 12.6 i cuDNN 9. Pakiet jest
+przygotowany również dla kart NVIDIA z serii RTX 20, w tym RTX 2080; potrzebny jest aktualny
+sterownik NVIDIA. Sprzęt AMD i Intel nadal jest wykrywany dynamicznie, a przy wypalaniu filmu
+program potrafi użyć odpowiednio AMD AMF lub Intel Quick Sync, jeśli udostępnia je FFmpeg.
+
+Sekcja **Wykorzystanie procesora** mapuje wybrany procent na prawdziwą liczbę logicznych wątków.
+Ustawienie 100% przekazuje wszystkie dostępne wątki do PyTorch, Whispera i kodera CPU oraz zwiększa
+bezpieczny rozmiar partii tłumaczenia. Nie zmienia parametrów jakości modelu. Wskaźnik Menedżera
+zadań może chwilowo spaść podczas pobierania, odczytu plików albo etapów, których nie da się
+równolegle rozłożyć, ale program nie wykonuje sztucznego obciążenia bez użytecznej pracy.
+
 Kod projektu ma licencję MIT. Model `facebook/m2m100_418M` jest pobierany osobno z Hugging Face
 i również jest udostępniany na licencji MIT. PolySub nie dołącza modelu ani kluczy API do repozytorium.
 
@@ -74,8 +87,8 @@ Dotychczasowy wybór `.srt` działa tak samo jak wcześniej. Dodatkowo można ws
 3. Program wykrywa język utworzonego tekstu.
 4. Użytkownik wybiera język docelowy i zwykły tryb tłumaczenia.
 5. Wynik zostaje zapisany obok filmu, np. jako `film.pl.srt`.
-6. Opcjonalnie przycisk **Dołącz napisy do filmu — szybko** tworzy gotowy film ze ścieżką
-   napisów.
+6. Na końcu można wybrać szybkie dodanie przełączanej ścieżki albo wypalenie napisów na stałe
+   w obrazie filmu.
 
 Do ekstrakcji używany jest FFmpeg dołączony do aplikacji, więc nie trzeba instalować go ręcznie.
 Rozpoznawanie mowy działa lokalnie i oferuje wariant **small** (szybszy) oraz **medium**
@@ -93,7 +106,23 @@ nie zmienia, a operacja jest ograniczona głównie szybkością odczytu i zapisu
 kontenera powstaje np. `film.pl.subtitled.mp4` albo `film.pl.subtitled.mkv`.
 
 Napisy można włączać i wyłączać w odtwarzaczu. Nie są one wypalane na stałe w każdej klatce — takie
-wypalanie wymagałoby ponownego kodowania filmu i trwałoby wyraźnie dłużej.
+wypalanie jest dostępne jako drugi, osobny przycisk.
+
+### Trwałe napisy na obrazie do telewizora
+
+Przycisk **Wypal napisy na obrazie — TV** tworzy osobny plik, domyślnie
+`film.pl.burned.mp4`. Tekst staje się częścią każdej klatki, więc będzie widoczny również w
+odtwarzaczu lub telewizorze, który nie włącza dodatkowej ścieżki SRT.
+
+Ta operacja musi ponownie zakodować obraz. PolySub najpierw sprawdza dostępne kodery i próbuje
+NVIDIA NVENC, Intel Quick Sync albo AMD AMF zgodnie z wybranym sprzętem. Jeśli koder sprzętowy jest
+niedostępny lub zgłosi błąd, program automatycznie przechodzi na wielowątkowy x264 na CPU. Obraz
+jest zapisywany jako H.264 z formatem pikseli `yuv420p`, a dźwięk jako AAC dla szerokiej zgodności
+z telewizorami. Pasek pokazuje przetworzony czas filmu, a oryginał nigdy nie jest nadpisywany.
+
+PolySub pracuje na zwykłym lokalnym pliku wideo. Nie przechwytuje filmu bezpośrednio z aplikacji
+HBO ani nie obchodzi zabezpieczeń DRM — najpierw trzeba mieć legalnie dostępny, niechroniony plik,
+który można otworzyć w programie.
 
 ## Najprostsza instalacja na Windows
 
@@ -110,6 +139,10 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 Przy kolejnych uruchomieniach klikaj skrót **PolySub Translator** na pulpicie albo w menu Start.
 Instalator działa dla bieżącego użytkownika i nie wymaga uprawnień administratora.
+
+Wersja 0.4.6 jest większa od 0.4.5, ponieważ zawiera biblioteki CUDA i cuDNN potrzebne do działania
+na zgodnych kartach NVIDIA bez ręcznego instalowania środowiska programistycznego CUDA. Starsze
+wydania 0.4.5 oraz 0.4.4 pozostają dostępne na stronie Releases.
 
 Po uruchomieniu program dyskretnie sprawdza najnowsze wydanie na GitHubie. Jeśli jest dostępna
 nowsza wersja, pokaże jej numer i przycisk **Pobierz wersję…**. Instalator nigdy nie uruchamia się
@@ -147,6 +180,7 @@ python -m pip install --upgrade pip
 ### Wariant lokalny
 
 ```powershell
+pip install "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu126
 pip install -e ".[local,fasttext,video]"
 polysub-gui
 ```
@@ -180,9 +214,11 @@ polysub-gui
 4. Wybierz lokalny model albo DeepL API.
 5. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
 6. Zostaw **Automatycznie** albo wybierz wykryty procesor lub kartę graficzną.
-7. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
-8. Rozpocznij tłumaczenie.
-9. Dla filmu możesz następnie kliknąć **Dołącz napisy do filmu — szybko** i wskazać plik wynikowy.
+7. Wybierz limit wykorzystania procesora; domyślne 100% daje maksymalną wydajność.
+8. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
+9. Rozpocznij tłumaczenie.
+10. Dla filmu wybierz **Dodaj przełączaną ścieżkę — szybko** albo
+    **Wypal napisy na obrazie — TV**.
 
 Wynik tłumaczenia otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw
 otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowych napisów.
@@ -205,6 +241,9 @@ polysub film.mp4 --target pl --engine local --speech-model medium
 
 # To samo oraz szybkie utworzenie filmu z przełączaną polską ścieżką napisów
 polysub film.mp4 --target pl --engine local --attach-to-video
+
+# Film z polskimi napisami wypalonymi na stałe i pełnym limitem CPU
+polysub film.mp4 --target pl --engine local --burn-into-video --cpu-limit 100
 ```
 
 Uruchomienie `polysub` bez parametrów otwiera GUI.
@@ -229,6 +268,7 @@ tekst źródłowy nie zawiera wymaganej informacji.
 - oryginalny film nigdy nie jest modyfikowany ani nadpisywany;
 - napisy wyciągnięte lub rozpoznane z filmu są zapisywane w osobnym pliku roboczym `.srt`;
 - film z dołączonymi napisami zawsze jest zapisywany jako osobny plik `.mp4` albo `.mkv`;
+- film z napisami wypalonymi na obrazie również powstaje jako osobny plik;
 - struktura jest sprawdzana przed zapisem;
 - niedokończone zadanie trafia do pliku `*.srt.polysub.json`;
 - plik awaryjny nie zawiera klucza API i jest usuwany po ukończeniu tłumaczenia;
@@ -243,8 +283,9 @@ pytest
 ```
 
 GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12. Workflow Windows buduje
-`Setup.exe`, instaluje go w czystym katalogu, sprawdza dołączony README, uruchamia oba testy programu,
-sprawdza deinstalator i zawartość instalacyjnego ZIP-a, a dopiero potem publikuje pliki w Releases.
+`Setup.exe`, instaluje go w czystym katalogu, sprawdza dołączony README, oba sposoby dodawania
+napisów, ustawienia CPU, biblioteki CUDA/cuDNN, GUI, deinstalator i zawartość instalacyjnego ZIP-a,
+a dopiero potem publikuje pliki w Releases.
 
 ## Struktura projektu
 
@@ -254,6 +295,7 @@ src/polysub/
 ├── cli.py         # interfejs terminalowy
 ├── gui.py         # aplikacja desktopowa
 ├── service.py     # tłumaczenie, kontekst, postęp i wznowienie
+├── performance.py # limity CPU i konfiguracja bibliotek wielowątkowych
 ├── subtitles.py   # parser oraz walidacja SRT
 ├── video.py       # FFmpeg, wbudowane napisy i lokalna transkrypcja Whisper
 ├── detector.py    # automatyczne wykrywanie języka
@@ -267,7 +309,6 @@ src/polysub/
 - słownik nazw i terminów zapisywany per projekt;
 - profile postaci przypisywane do konkretnych rozmówców;
 - pamięć zaakceptowanych tłumaczeń;
-- opcjonalne wypalanie napisów na stałe z akceleracją GPU;
 - podpis cyfrowy instalatora Windows certyfikatem code-signing.
 
 ## Licencja

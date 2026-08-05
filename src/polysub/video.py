@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .performance import (
+    DEFAULT_CPU_USAGE,
+    configure_thread_environment,
+    cpu_allocation,
+)
 from .subtitles import SRTCue, SRTDocument, SubtitleFormatError
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
@@ -29,12 +34,23 @@ class VideoMuxError(RuntimeError):
     pass
 
 
+class VideoBurnError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class VideoImportResult:
     document: SRTDocument
     subtitle_path: Path
     method: str
     detected_language: str | None = None
+
+
+@dataclass(frozen=True)
+class VideoBurnResult:
+    output_path: Path
+    encoder: str
+    hardware_accelerated: bool
 
 
 class VideoSubtitleImporter:
@@ -47,6 +63,7 @@ class VideoSubtitleImporter:
         device: str | None = None,
         device_index: int = 0,
         allow_cpu_fallback: bool = True,
+        cpu_usage_limit: int = DEFAULT_CPU_USAGE,
     ) -> None:
         self.model_size = model_size
         self.ffmpeg_executable = ffmpeg_executable
@@ -54,6 +71,8 @@ class VideoSubtitleImporter:
         self.device = device
         self.device_index = device_index
         self.allow_cpu_fallback = allow_cpu_fallback
+        self.cpu_allocation = cpu_allocation(cpu_usage_limit)
+        configure_thread_environment(self.cpu_allocation)
 
     def import_video(
         self,
@@ -230,10 +249,18 @@ class VideoSubtitleImporter:
             "device": device,
             "compute_type": compute_type,
             "download_root": str(_whisper_cache_path()),
+            "cpu_threads": self.cpu_allocation.threads,
+            "num_workers": 1,
         }
         if device != "cpu":
             model_kwargs["device_index"] = device_index
         model = model_factory(self.model_size, **model_kwargs)
+        status(
+            "Whisper może użyć "
+            f"{self.cpu_allocation.threads} z "
+            f"{self.cpu_allocation.logical_processors} logicznych wątków CPU "
+            f"({self.cpu_allocation.percentage}%)."
+        )
         status("Analizowanie ścieżki dźwiękowej filmu...")
         segments, info = model.transcribe(
             str(video_path),
@@ -364,6 +391,292 @@ class VideoSubtitleMuxer:
             return None
 
 
+class VideoSubtitleBurner:
+    """Render SRT text into every video frame and create a separate output file."""
+
+    HARDWARE_ENCODERS = {
+        "NVIDIA": "h264_nvenc",
+        "Intel": "h264_qsv",
+        "AMD": "h264_amf",
+    }
+    ENCODER_NAMES = {
+        "h264_nvenc": "NVIDIA NVENC",
+        "h264_qsv": "Intel Quick Sync",
+        "h264_amf": "AMD AMF",
+        "libx264": "CPU (x264)",
+        "mpeg4": "CPU (MPEG-4)",
+    }
+
+    def __init__(
+        self,
+        *,
+        ffmpeg_executable: str | None = None,
+        cpu_usage_limit: int = DEFAULT_CPU_USAGE,
+    ) -> None:
+        self.ffmpeg_executable = ffmpeg_executable
+        self.cpu_allocation = cpu_allocation(cpu_usage_limit)
+
+    def burn(
+        self,
+        video_path: str | Path,
+        subtitle_path: str | Path,
+        *,
+        target_language: str,
+        output_path: str | Path | None = None,
+        preferred_vendor: str | None = None,
+        status: StatusCallback | None = None,
+        progress: MediaProgressCallback | None = None,
+    ) -> VideoBurnResult:
+        status = status or (lambda _message: None)
+        progress = progress or (lambda _processed, _total: None)
+        status("Sprawdzanie filmu i przetłumaczonych napisów...")
+        video = Path(video_path)
+        subtitles = Path(subtitle_path)
+        output = (
+            Path(output_path)
+            if output_path
+            else burned_video_output_path(video, target_language)
+        )
+        self._validate_paths(video, subtitles, output)
+
+        status("Przygotowywanie programu FFmpeg i wykrywanie akceleracji...")
+        ffmpeg = self._resolve_ffmpeg()
+        if ffmpeg is None:
+            raise VideoBurnError(
+                'Brakuje FFmpeg. Zainstaluj obsługę wideo: pip install -e ".[video]"'
+            )
+
+        available = self._available_encoders(ffmpeg)
+        candidates = self._encoder_candidates(available, preferred_vendor)
+        if not candidates:
+            raise VideoBurnError("FFmpeg nie udostępnia zgodnego kodera obrazu.")
+
+        duration = self._probe_duration(ffmpeg, video)
+        temporary = output.with_name(f".{output.stem}.burning{output.suffix}")
+        temporary.unlink(missing_ok=True)
+        errors: list[str] = []
+        for encoder in candidates:
+            encoder_name = self.ENCODER_NAMES[encoder]
+            hardware = encoder in self.HARDWARE_ENCODERS.values()
+            status(
+                f"Wypalanie napisów przez {encoder_name}..."
+                if hardware
+                else f"Wypalanie napisów przez {encoder_name} — tryb awaryjny..."
+            )
+            temporary.unlink(missing_ok=True)
+            command = self._burn_command(
+                ffmpeg,
+                video,
+                subtitles,
+                temporary,
+                encoder,
+            )
+            try:
+                returncode, details = self._run_with_progress(
+                    command,
+                    duration=duration,
+                    progress=progress,
+                )
+            except OSError as exc:
+                temporary.unlink(missing_ok=True)
+                raise VideoBurnError(f"Nie udało się uruchomić FFmpeg: {exc}") from exc
+
+            if returncode == 0 and temporary.is_file() and temporary.stat().st_size > 0:
+                status("Finalizowanie filmu z napisami na obrazie...")
+                temporary.replace(output)
+                progress(max(duration, 1.0), max(duration, 1.0))
+                return VideoBurnResult(output, encoder_name, hardware)
+
+            temporary.unlink(missing_ok=True)
+            errors.append(f"{encoder_name}: {details or 'koder nie uruchomił się'}")
+            if hardware:
+                status(
+                    f"{encoder_name} nie zadziałał — próba kolejnego kodera "
+                    "lub bezpiecznego trybu CPU..."
+                )
+
+        details = "\n".join(errors[-3:])
+        message = "Nie udało się wypalić napisów na obrazie filmu."
+        if details:
+            message += f"\n\nFFmpeg:\n{details}"
+        raise VideoBurnError(message)
+
+    @staticmethod
+    def _validate_paths(video: Path, subtitles: Path, output: Path) -> None:
+        if not video.is_file():
+            raise VideoBurnError(f"Nie znaleziono filmu: {video}")
+        if not subtitles.is_file():
+            raise VideoBurnError(f"Nie znaleziono napisów: {subtitles}")
+        if subtitles.suffix.lower() != ".srt":
+            raise VideoBurnError("Wypalanie napisów obsługuje pliki SRT.")
+        if output.suffix.lower() not in {".mp4", ".mkv"}:
+            raise VideoBurnError("Film wynikowy musi mieć rozszerzenie .mp4 albo .mkv.")
+        if _same_path(video, output):
+            raise VideoBurnError("Film wynikowy nie może nadpisywać oryginalnego filmu.")
+
+    def _resolve_ffmpeg(self) -> str | None:
+        if self.ffmpeg_executable:
+            return self.ffmpeg_executable
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, RuntimeError):
+            return None
+
+    def _available_encoders(self, ffmpeg: str) -> set[str] | None:
+        try:
+            completed = subprocess.run(
+                [ffmpeg, "-nostdin", "-hide_banner", "-encoders"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError:
+            return None
+        if completed.returncode != 0:
+            return None
+        encoders = set()
+        for line in completed.stdout.splitlines():
+            pieces = line.split()
+            if len(pieces) >= 2 and pieces[0].startswith("V"):
+                encoders.add(pieces[1])
+        return encoders
+
+    def _encoder_candidates(
+        self,
+        available: set[str] | None,
+        preferred_vendor: str | None,
+    ) -> list[str]:
+        def is_available(name: str) -> bool:
+            return available is None or name in available
+
+        software = [
+            name
+            for name in ("libx264", "mpeg4")
+            if is_available(name)
+        ][:1]
+        if preferred_vendor == "CPU":
+            return software
+
+        if preferred_vendor in self.HARDWARE_ENCODERS:
+            hardware_order = [self.HARDWARE_ENCODERS[preferred_vendor]]
+        else:
+            hardware_order = [
+                self.HARDWARE_ENCODERS[vendor]
+                for vendor in ("NVIDIA", "Intel", "AMD")
+            ]
+        hardware = [name for name in hardware_order if is_available(name)]
+        return hardware + software
+
+    def _burn_command(
+        self,
+        ffmpeg: str,
+        video: Path,
+        subtitles: Path,
+        temporary: Path,
+        encoder: str,
+    ) -> list[str]:
+        command = [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-map_metadata",
+            "0",
+            "-map_chapters",
+            "0",
+            "-vf",
+            _subtitle_filter(subtitles),
+            "-filter_threads",
+            str(self.cpu_allocation.threads),
+        ]
+        command += _video_encoder_arguments(encoder)
+        command += [
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-threads",
+            str(self.cpu_allocation.threads),
+            "-sn",
+        ]
+        if temporary.suffix.lower() == ".mp4":
+            command += ["-movflags", "+faststart"]
+        command += ["-progress", "pipe:1", "-nostats", str(temporary)]
+        return command
+
+    @staticmethod
+    def _run_with_progress(
+        command: list[str],
+        *,
+        duration: float,
+        progress: MediaProgressCallback,
+    ) -> tuple[int, str]:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        details_lines: list[str] = []
+        if process.stdout is not None:
+            for raw_line in process.stdout:
+                key, separator, raw_value = raw_line.strip().partition("=")
+                if not separator or key not in {"out_time_us", "out_time_ms"}:
+                    details_lines.append(raw_line)
+                    details_lines = details_lines[-50:]
+                    continue
+                try:
+                    processed = max(float(raw_value) / 1_000_000, 0.0)
+                except ValueError:
+                    continue
+                progress(processed, max(duration, processed, 1.0))
+        returncode = process.wait()
+        details = _process_error("".join(details_lines))
+        return returncode, details
+
+    @staticmethod
+    def _probe_duration(ffmpeg: str, video: Path) -> float:
+        try:
+            completed = subprocess.run(
+                [ffmpeg, "-nostdin", "-hide_banner", "-i", str(video)],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError:
+            return 0.0
+        match = re.search(
+            r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
+            completed.stderr or "",
+        )
+        if match is None:
+            return 0.0
+        hours, minutes, seconds = match.groups()
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
 def extracted_subtitle_path(video_path: str | Path) -> Path:
     video = Path(video_path)
     return video.with_name(f"{video.stem}.extracted.srt")
@@ -383,6 +696,11 @@ def fast_mux_output_path(video_path: str | Path, target_language: str) -> Path:
     video = Path(video_path)
     suffix = ".mp4" if video.suffix.lower() in FAST_MUX_MP4_EXTENSIONS else ".mkv"
     return video.with_name(f"{video.stem}.{target_language.lower()}.subtitled{suffix}")
+
+
+def burned_video_output_path(video_path: str | Path, target_language: str) -> Path:
+    video = Path(video_path)
+    return video.with_name(f"{video.stem}.{target_language.lower()}.burned.mp4")
 
 
 def format_media_duration(seconds: float) -> str:
@@ -428,6 +746,55 @@ def _process_error(stderr: bytes | str | None) -> str:
     else:
         value = stderr or ""
     return " ".join(value.strip().split())[-1200:]
+
+
+def _subtitle_filter(subtitles: Path) -> str:
+    escaped = str(subtitles.resolve()).replace("\\", "/")
+    for character in ("\\", ":", "'", "[", "]", ",", ";"):
+        escaped = escaped.replace(character, f"\\{character}")
+    style = "FontName=Arial,FontSize=22,Outline=2,Shadow=0,MarginV=24,Alignment=2"
+    return (
+        f"subtitles=filename='{escaped}':charenc=UTF-8:"
+        f"force_style='{style}'"
+    )
+
+
+def _video_encoder_arguments(encoder: str) -> list[str]:
+    if encoder == "h264_nvenc":
+        return [
+            "-c:v",
+            encoder,
+            "-preset",
+            "p4",
+            "-tune",
+            "hq",
+            "-rc",
+            "vbr",
+            "-cq",
+            "20",
+            "-b:v",
+            "0",
+        ]
+    if encoder == "h264_qsv":
+        return ["-c:v", encoder, "-preset", "medium", "-global_quality", "20"]
+    if encoder == "h264_amf":
+        return [
+            "-c:v",
+            encoder,
+            "-quality",
+            "balanced",
+            "-rc",
+            "cqp",
+            "-qp_i",
+            "20",
+            "-qp_p",
+            "22",
+            "-qp_b",
+            "24",
+        ]
+    if encoder == "libx264":
+        return ["-c:v", encoder, "-preset", "veryfast", "-crf", "20"]
+    return ["-c:v", "mpeg4", "-q:v", "3"]
 
 
 def _cues_from_segment(segment: Any, *, first_identifier: int) -> list[SRTCue]:

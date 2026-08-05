@@ -26,14 +26,18 @@ from .detector import detect_language
 from .engines import DeepLEngine, M2M100Engine
 from .languages import language_name, language_options, parse_language_option
 from .models import TranslationMode
+from .performance import DEFAULT_CPU_USAGE, cpu_allocation
 from .service import TranslationOptions, TranslationService
 from .subtitles import SRTDocument, default_output_path
 from .updates import UpdateCheckError, UpdateInfo, check_for_updates
 from .video import (
     VIDEO_EXTENSIONS,
+    VideoBurnResult,
     VideoImportResult,
+    VideoSubtitleBurner,
     VideoSubtitleImporter,
     VideoSubtitleMuxer,
+    burned_video_output_path,
     fast_mux_output_path,
     format_media_duration,
     translated_video_subtitle_path,
@@ -47,6 +51,13 @@ ENGINE_LABELS = {
 SPEECH_MODEL_LABELS = {
     "Szybsze — Whisper small": "small",
     "Dokładniejsze — Whisper medium": "medium",
+}
+
+CPU_USAGE_LABELS = {
+    "100% — maksymalna wydajność": 100,
+    "75% — wysokie obciążenie": 75,
+    "50% — połowa procesora": 50,
+    "25% — lekkie obciążenie": 25,
 }
 
 
@@ -308,8 +319,35 @@ class PolySubApp(tk.Tk):
             wraplength=820,
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(7, 0))
 
+        cpu_frame = ttk.LabelFrame(
+            container,
+            text="6. Wykorzystanie procesora",
+            padding=12,
+        )
+        cpu_frame.pack(fill="x", pady=(12, 0))
+        cpu_frame.columnconfigure(0, weight=1)
+        self.cpu_usage_var = tk.StringVar(value=next(iter(CPU_USAGE_LABELS)))
+        self.cpu_usage_combo = ttk.Combobox(
+            cpu_frame,
+            textvariable=self.cpu_usage_var,
+            values=list(CPU_USAGE_LABELS),
+            state="readonly",
+        )
+        self.cpu_usage_combo.grid(row=0, column=0, sticky="ew")
+        self.cpu_usage_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_cpu_usage_description(),
+        )
+        self.cpu_usage_status_var = tk.StringVar()
+        ttk.Label(
+            cpu_frame,
+            textvariable=self.cpu_usage_status_var,
+            wraplength=820,
+        ).grid(row=1, column=0, sticky="w", pady=(7, 0))
+        self._update_cpu_usage_description()
+
         context_frame = ttk.LabelFrame(
-            container, text="6. Postacie i kontekst (opcjonalnie)", padding=12
+            container, text="7. Postacie i kontekst (opcjonalnie)", padding=12
         )
         context_frame.pack(fill="both", expand=True, pady=12)
         ttk.Label(
@@ -429,6 +467,32 @@ class PolySubApp(tk.Tk):
             task,
         )
 
+    def _preferred_burn_vendor(self) -> str | None:
+        if self._selected_device_id == AUTO_DEVICE_ID:
+            return None
+        selected = next(
+            (
+                device
+                for device in self._compute_devices
+                if device.id == self._selected_device_id
+            ),
+            None,
+        )
+        if selected is None:
+            return None
+        return "CPU" if selected.kind == "cpu" else selected.vendor
+
+    def _selected_cpu_usage_limit(self) -> int:
+        return CPU_USAGE_LABELS.get(self.cpu_usage_var.get(), DEFAULT_CPU_USAGE)
+
+    def _update_cpu_usage_description(self) -> None:
+        allocation = cpu_allocation(self._selected_cpu_usage_limit())
+        self.cpu_usage_status_var.set(
+            f"Model może użyć {allocation.threads} z "
+            f"{allocation.logical_processors} logicznych wątków. "
+            "Nie zmienia to jakości tłumaczenia."
+        )
+
     def _start_update_check(self) -> None:
         if self._update_check_running:
             return
@@ -496,18 +560,31 @@ class PolySubApp(tk.Tk):
         action_frame.columnconfigure(1, weight=1)
         self.attach_button = ttk.Button(
             action_frame,
-            text="Dołącz napisy do filmu — szybko",
+            text="Dodaj przełączaną ścieżkę — szybko",
             command=self._attach_subtitles,
             state="disabled",
         )
         self.attach_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.burn_button = ttk.Button(
+            action_frame,
+            text="Wypal napisy na obrazie — TV",
+            command=self._burn_subtitles,
+            state="disabled",
+        )
+        self.burn_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
         self.start_button = ttk.Button(
             action_frame,
             text="Rozpocznij tłumaczenie",
             command=self._start_translation,
             style="Primary.TButton",
         )
-        self.start_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self.start_button.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(8, 0),
+        )
 
     def _build_activity_panel(self) -> None:
         activity = ttk.LabelFrame(self, text="Postęp operacji", padding=(18, 10))
@@ -702,6 +779,7 @@ class PolySubApp(tk.Tk):
         self.translated_subtitle_path = None
         self.translated_target_language = None
         self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
         self.file_var.set(str(selected_path))
 
         if selected_path.suffix.lower() in VIDEO_EXTENSIONS:
@@ -714,6 +792,7 @@ class PolySubApp(tk.Tk):
         self.file_button.configure(state="disabled")
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
         self._begin_activity(
             ["Wczytywanie pliku", "Wykrywanie języka", "Przygotowanie dokumentu"],
             f"Otwieranie pliku {subtitle_path.name}",
@@ -768,6 +847,7 @@ class PolySubApp(tk.Tk):
         self.file_button.configure(state="disabled")
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
         self._begin_activity(
             [
                 "Analiza filmu",
@@ -779,9 +859,10 @@ class PolySubApp(tk.Tk):
         )
         model_size = SPEECH_MODEL_LABELS[self.speech_model_var.get()]
         device_resolution = self._resolve_selected_device("transcription")
+        cpu_usage_limit = self._selected_cpu_usage_limit()
         thread = threading.Thread(
             target=self._video_import_worker,
-            args=(video_path, model_size, device_resolution),
+            args=(video_path, model_size, device_resolution, cpu_usage_limit),
             daemon=True,
         )
         thread.start()
@@ -791,6 +872,7 @@ class PolySubApp(tk.Tk):
         video_path: Path,
         model_size: str,
         device_resolution: DeviceResolution,
+        cpu_usage_limit: int,
     ) -> None:
         try:
             if device_resolution.fallback_reason:
@@ -799,6 +881,7 @@ class PolySubApp(tk.Tk):
                 model_size=model_size,
                 device=device_resolution.runtime_device,
                 device_index=device_resolution.device_index,
+                cpu_usage_limit=cpu_usage_limit,
             )
             result = importer.import_video(
                 video_path,
@@ -921,11 +1004,13 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.file_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
         self.translated_subtitle_path = None
         self.translated_target_language = None
         api_key = self.api_key_var.get()
         mode = TranslationMode(self.mode_var.get())
         context_notes = self.context_text.get("1.0", "end").strip()
+        cpu_usage_limit = self._selected_cpu_usage_limit()
         final_processing_stage = (
             "Przygotowanie weryfikacji"
             if mode is TranslationMode.REVIEW
@@ -956,6 +1041,7 @@ class PolySubApp(tk.Tk):
                 mode,
                 context_notes,
                 device_resolution,
+                cpu_usage_limit,
             ),
             daemon=True,
         )
@@ -970,6 +1056,7 @@ class PolySubApp(tk.Tk):
         mode: TranslationMode,
         context_notes: str,
         device_resolution: DeviceResolution,
+        cpu_usage_limit: int,
     ) -> None:
         try:
             if engine_kind == "local" and device_resolution.fallback_reason:
@@ -979,7 +1066,8 @@ class PolySubApp(tk.Tk):
                 if engine_kind == "deepl"
                 else M2M100Engine(
                     device=device_resolution.runtime_device,
-                    status=lambda message: self.after(0, self._engine_status, message)
+                    status=lambda message: self.after(0, self._engine_status, message),
+                    cpu_usage_limit=cpu_usage_limit,
                 )
             )
             self.after(
@@ -1057,7 +1145,8 @@ class PolySubApp(tk.Tk):
         self._show_stage(6, finished_message, determinate=True)
         self._finish_activity(finished_message)
         suffix = (
-            "\n\nMożesz teraz użyć przycisku „Dołącz napisy do filmu — szybko”."
+            "\n\nMożesz teraz szybko dodać przełączaną ścieżkę albo wypalić "
+            "napisy na obrazie, aby zawsze były widoczne na telewizorze."
             if self.media_path is not None
             else ""
         )
@@ -1087,6 +1176,7 @@ class PolySubApp(tk.Tk):
             and self.translated_target_language is not None
         )
         self.attach_button.configure(state="normal" if ready else "disabled")
+        self.burn_button.configure(state="normal" if ready else "disabled")
 
     def _attach_subtitles(self) -> None:
         if (
@@ -1124,6 +1214,7 @@ class PolySubApp(tk.Tk):
         self.file_button.configure(state="disabled")
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
         self._begin_activity(
             [
                 "Sprawdzanie plików",
@@ -1187,6 +1278,116 @@ class PolySubApp(tk.Tk):
         self._fail_activity("Nie udało się dołączyć napisów")
         messagebox.showerror("Dołączanie napisów nie powiodło się", message, parent=self)
 
+    def _burn_subtitles(self) -> None:
+        if (
+            self.media_path is None
+            or self.translated_subtitle_path is None
+            or self.translated_target_language is None
+        ):
+            messagebox.showwarning(
+                "Brak gotowych napisów",
+                "Najpierw przetłumacz napisy filmu i zapisz wynik.",
+                parent=self,
+            )
+            return
+
+        default_output = burned_video_output_path(
+            self.media_path,
+            self.translated_target_language,
+        )
+        selected = filedialog.asksaveasfilename(
+            parent=self,
+            title="Zapisz film z napisami wypalonymi na obrazie",
+            initialdir=str(default_output.parent),
+            initialfile=default_output.name,
+            defaultextension=".mp4",
+            filetypes=[("Film MP4", "*.mp4"), ("Film Matroska", "*.mkv")],
+        )
+        if not selected:
+            return
+
+        self.file_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
+        self._begin_activity(
+            [
+                "Sprawdzanie plików",
+                "Wykrywanie akceleracji",
+                "Wypalanie napisów",
+                "Finalizowanie filmu",
+                "Gotowe",
+            ],
+            "Sprawdzanie filmu i przygotowanych napisów...",
+        )
+        thread = threading.Thread(
+            target=self._burn_subtitles_worker,
+            args=(Path(selected), self._selected_cpu_usage_limit(), self._preferred_burn_vendor()),
+            daemon=True,
+        )
+        thread.start()
+
+    def _burn_subtitles_worker(
+        self,
+        output_path: Path,
+        cpu_usage_limit: int,
+        preferred_vendor: str | None,
+    ) -> None:
+        try:
+            target_language = self.translated_target_language
+            if (
+                self.media_path is None
+                or self.translated_subtitle_path is None
+                or target_language is None
+            ):
+                raise RuntimeError("Brakuje filmu albo gotowych napisów.")
+            result = VideoSubtitleBurner(cpu_usage_limit=cpu_usage_limit).burn(
+                self.media_path,
+                self.translated_subtitle_path,
+                target_language=target_language,
+                output_path=output_path,
+                preferred_vendor=preferred_vendor,
+                status=lambda message: self.after(0, self._burn_status, message),
+                progress=lambda done, total: self.after(
+                    0,
+                    self._set_burn_progress,
+                    done,
+                    total,
+                ),
+            )
+            self.after(0, self._burn_subtitles_finished, result)
+        except Exception as exc:
+            self.after(0, self._burn_subtitles_failed, str(exc))
+
+    def _burn_status(self, message: str) -> None:
+        lowered = message.lower()
+        if "sprawdzanie" in lowered:
+            self._show_stage(1, message)
+        elif "przygotowywanie" in lowered or "wykrywanie" in lowered:
+            self._show_stage(2, message)
+        elif "finalizowanie" in lowered:
+            self._show_stage(4, message)
+        else:
+            self._show_stage(3, message)
+
+    def _burn_subtitles_finished(self, result: VideoBurnResult) -> None:
+        self._finish_attach_operation()
+        acceleration = "akceleracja sprzętowa" if result.hardware_accelerated else "CPU"
+        finished_message = f"Film z trwałymi napisami gotowy: {result.output_path.name}"
+        self._show_stage(5, finished_message, determinate=True)
+        self._finish_activity(finished_message)
+        messagebox.showinfo(
+            "Film z trwałymi napisami gotowy",
+            "Napisy zostały wypalone bezpośrednio na obrazie i będą zawsze widoczne.\n\n"
+            f"Koder: {result.encoder} ({acceleration})\n\n{result.output_path}",
+            parent=self,
+        )
+
+    def _burn_subtitles_failed(self, message: str) -> None:
+        self._finish_attach_operation()
+        self._fail_activity("Nie udało się wypalić napisów na obrazie")
+        messagebox.showerror("Wypalanie napisów nie powiodło się", message, parent=self)
+
     def _finish_attach_operation(self) -> None:
         self.file_button.configure(state="normal")
         self.start_button.configure(state="normal")
@@ -1214,6 +1415,17 @@ class PolySubApp(tk.Tk):
         self.progress_text.set(
             f"Postęp etapu: {percent:.1f}% • rozpoznano "
             f"{format_media_duration(processed)} z {format_media_duration(total)} nagrania"
+        )
+
+    def _set_burn_progress(self, processed: float, total: float) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
+        self.progress_bar.configure(maximum=max(total, 1.0))
+        self.progress_var.set(int(processed))
+        percent = min(max(processed / max(total, 1.0) * 100, 0.0), 100.0)
+        self.progress_text.set(
+            f"Postęp etapu: {percent:.1f}% • przetworzono "
+            f"{format_media_duration(processed)} z {format_media_duration(total)} filmu"
         )
 
     def _translation_output_path(self, target_language: str) -> Path:
