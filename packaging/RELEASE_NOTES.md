@@ -66,5 +66,6 @@ Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 Windows SmartScreen może wyświetlić ostrzeżenie, ponieważ instalator nie ma jeszcze płatnego
 certyfikatu podpisu cyfrowego. W takim przypadku wybierz **Więcej informacji → Uruchom mimo to**.
 
-Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wersja przenośna jest dostępna
-w pliku `PolySub-Translator-Portable.zip`.
+Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydanie 0.4.6 nie zawiera nowej
+paczki portable, ponieważ dołączone biblioteki CUDA przekroczyłyby limit pojedynczego pliku GitHub
+Releases. Portable z wersji 0.4.5 nadal pozostaje dostępne w historii wydań.

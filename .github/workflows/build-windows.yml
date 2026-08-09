@@ -132,13 +132,6 @@ jobs:
             throw "Deinstalator zakończył się kodem $($uninstall.ExitCode)."
           }
 
-      - name: Create portable ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path ".\dist\PolySubTranslator" `
-            -DestinationPath ".\installer-output\PolySub-Translator-Portable.zip"
-
       - name: Create and test installer ZIP
         shell: pwsh
         run: |
@@ -171,8 +164,7 @@ jobs:
 
           $releaseFiles = @(
             ".\installer-output\PolySub-Translator-Setup.exe",
-            ".\installer-output\PolySub-Translator-Installer.zip",
-            ".\installer-output\PolySub-Translator-Portable.zip"
+            ".\installer-output\PolySub-Translator-Installer.zip"
           )
           $hashes = foreach ($file in $releaseFiles) {
             $hash = Get-FileHash -Algorithm SHA256 $file
@@ -189,7 +181,6 @@ jobs:
           path: |
             installer-output/PolySub-Translator-Setup.exe
             installer-output/PolySub-Translator-Installer.zip
-            installer-output/PolySub-Translator-Portable.zip
             installer-output/SHA256SUMS.txt
           if-no-files-found: error
           compression-level: 0
@@ -204,7 +195,6 @@ jobs:
           $assets = @(
             ".\installer-output\PolySub-Translator-Setup.exe",
             ".\installer-output\PolySub-Translator-Installer.zip",
-            ".\installer-output\PolySub-Translator-Portable.zip",
             ".\installer-output\SHA256SUMS.txt"
           )
 

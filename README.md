@@ -161,8 +161,9 @@ następnych uruchomieniach i tłumaczeniach nie jest pobierany ponownie.
 
 ### Wersja przenośna
 
-Ta sama strona Releases zawiera `PolySub-Translator-Portable.zip`. Po rozpakowaniu można uruchomić
-`PolySubTranslator\PolySubTranslator.exe` bez instalacji, ale wersja przenośna nie tworzy skrótu.
+Ze względu na dołączenie bibliotek CUDA wydanie 0.4.6 nie zawiera nowej paczki portable, która
+przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
+dostępna w historii wydań. Pełna wersja 0.4.6 jest publikowana jako `Setup.exe` i ZIP z instalatorem.
 
 ## Instalacja z kodu źródłowego na Windows
 
