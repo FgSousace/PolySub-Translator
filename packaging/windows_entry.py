@@ -371,7 +371,7 @@ def main() -> None:
                 ):
                     raise RuntimeError("Kafelki czasu nie zostały zablokowane podczas pracy.")
                 if any(
-                    checkbox.cget("state") != "disabled"
+                    not checkbox.instate(("disabled",))
                     for checkbox in (
                         app.automatic_mode_checkbox,
                         app.review_mode_checkbox,
