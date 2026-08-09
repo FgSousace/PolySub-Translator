@@ -11,20 +11,44 @@ param(
 $ErrorActionPreference = "Stop"
 $executablePath = (Resolve-Path $Executable).Path
 $displayName = "$([IO.Path]::GetFileName($executablePath)) $Argument"
+$traceFile = Join-Path `
+    ([IO.Path]::GetTempPath()) `
+    ("polysub-self-test-" + [guid]::NewGuid().ToString("N") + ".log")
+$previousTraceFile = $env:POLYSUB_SELF_TEST_TRACE
+$env:POLYSUB_SELF_TEST_TRACE = $traceFile
 Write-Host "Uruchamianie testu: $displayName (limit: $TimeoutSeconds s)"
 
-$process = Start-Process `
-    -FilePath $executablePath `
-    -ArgumentList $Argument `
-    -PassThru
+try {
+    $process = Start-Process `
+        -FilePath $executablePath `
+        -ArgumentList $Argument `
+        -PassThru
 
-if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-    throw "Test $displayName przekroczył limit $TimeoutSeconds sekund."
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        if (Test-Path $traceFile) {
+            Write-Host "Ostatnie etapy aplikacji przed przekroczeniem limitu:"
+            Get-Content $traceFile | Write-Host
+        }
+        throw "Test $displayName przekroczył limit $TimeoutSeconds sekund."
+    }
+
+    if ($process.ExitCode -ne 0) {
+        if (Test-Path $traceFile) {
+            Write-Host "Szczegóły błędu aplikacji:"
+            Get-Content $traceFile | Write-Host
+        }
+        throw "Test $displayName zakończył się kodem $($process.ExitCode)."
+    }
+
+    Write-Host "Test zakończony poprawnie: $displayName"
 }
-
-if ($process.ExitCode -ne 0) {
-    throw "Test $displayName zakończył się kodem $($process.ExitCode)."
+finally {
+    Remove-Item $traceFile -Force -ErrorAction SilentlyContinue
+    if ($null -eq $previousTraceFile) {
+        Remove-Item Env:POLYSUB_SELF_TEST_TRACE -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:POLYSUB_SELF_TEST_TRACE = $previousTraceFile
+    }
 }
-
-Write-Host "Test zakończony poprawnie: $displayName"
