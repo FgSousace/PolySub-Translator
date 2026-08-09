@@ -55,30 +55,45 @@ jobs:
         shell: pwsh
         run: .\scripts\build_windows.ps1 -SkipDependencyInstall
 
-      - name: Smoke-test unpacked executable
+      - name: Test EXE — wersja
         shell: pwsh
-        run: |
-          foreach ($argument in @(
-            "--version",
-            "--self-test-video",
-            "--self-test-hardware",
-            "--self-test-performance",
-            "--self-test-nvidia-runtime",
-            "--self-test-branding",
-            "--self-test-amd-runtime",
-            "--self-test-model-catalog",
-            "--self-test-subtitle-timing",
-            "--self-test-gui"
-          )) {
-            $process = Start-Process `
-              -FilePath ".\dist\PolySubTranslator\PolySubTranslator.exe" `
-              -ArgumentList $argument `
-              -PassThru `
-              -Wait
-            if ($process.ExitCode -ne 0) {
-              throw "Test $argument zakończył się kodem $($process.ExitCode)."
-            }
-          }
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--version"
+
+      - name: Test EXE — wideo
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-video"
+
+      - name: Test EXE — wykrywanie sprzętu
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-hardware"
+
+      - name: Test EXE — wydajność CPU
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-performance"
+
+      - name: Test EXE — NVIDIA CUDA
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-nvidia-runtime"
+
+      - name: Test EXE — marka i licencja
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-branding"
+
+      - name: Test EXE — AMD ROCm
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-amd-runtime"
+
+      - name: Test EXE — katalog modeli
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-model-catalog"
+
+      - name: Test EXE — czas napisów
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-subtitle-timing"
+
+      - name: Test EXE — GUI
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-gui"
 
       - name: Install, test and uninstall Setup.exe
         shell: pwsh
@@ -114,23 +129,12 @@ jobs:
           foreach ($argument in @(
             "--version",
             "--self-test-video",
-            "--self-test-hardware",
-            "--self-test-performance",
             "--self-test-nvidia-runtime",
             "--self-test-branding",
             "--self-test-amd-runtime",
-            "--self-test-model-catalog",
-            "--self-test-subtitle-timing",
             "--self-test-gui"
           )) {
-            $process = Start-Process `
-              -FilePath $installedExe `
-              -ArgumentList $argument `
-              -PassThru `
-              -Wait
-            if ($process.ExitCode -ne 0) {
-              throw "Zainstalowany program: test $argument zakończył się kodem $($process.ExitCode)."
-            }
+            .\scripts\run_windows_self_test.ps1 $installedExe $argument
           }
 
           $uninstaller = Get-ChildItem `
