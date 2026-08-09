@@ -1,0 +1,31 @@
+import re
+from pathlib import Path
+
+import tomllib
+
+from polysub import __version__
+from polysub.cli import build_parser
+from polysub.translation_models import DEFAULT_MODEL_ID, MODEL_CATALOG
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_version_is_consistent_in_python_project_and_installer() -> None:
+    project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    installer = (PROJECT_ROOT / "packaging" / "PolySubTranslator.iss").read_text(
+        encoding="utf-8"
+    )
+    installer_version = re.search(r'#define MyAppVersion "([^"]+)"', installer)
+
+    assert project["project"]["version"] == __version__
+    assert installer_version is not None
+    assert installer_version.group(1) == __version__
+
+
+def test_cli_accepts_every_catalog_model() -> None:
+    parser = build_parser()
+    model_action = next(action for action in parser._actions if action.dest == "local_model")
+
+    assert model_action.default == DEFAULT_MODEL_ID
+    assert tuple(model_action.choices) == tuple(model.id for model in MODEL_CATALOG)
+

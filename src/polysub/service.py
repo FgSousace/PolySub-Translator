@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .checkpoint import CheckpointStore, checkpoint_for
@@ -9,6 +9,7 @@ from .engines.base import TranslationEngine, TranslationEngineError
 from .markup import ProtectedText
 from .models import ReviewItem, TranslationMode, TranslationResult
 from .review import analyze_translation
+from .subtitle_timing import SubtitleTimingSettings, optimize_subtitle_timing
 from .subtitles import SRTDocument
 
 ProgressCallback = Callable[[int, int], None]
@@ -23,6 +24,9 @@ class TranslationOptions:
     context_notes: str = ""
     context_window: int = 3
     use_checkpoint: bool = True
+    subtitle_timing: SubtitleTimingSettings = field(
+        default_factory=SubtitleTimingSettings.recommended
+    )
 
 
 class TranslationService:
@@ -97,6 +101,10 @@ class TranslationService:
 
         status("Kontrola struktury, timestampów i formatowania...")
         translated.assert_structure_matches(original)
+        status("Dopasowywanie czasu wyświetlania napisów bez zmiany ich początku...")
+        timing_result = optimize_subtitle_timing(translated, options.subtitle_timing)
+        translated = timing_result.document
+        status(timing_result.stats.summary)
         status("Analizowanie jakości gotowego tłumaczenia...")
         review_items = self._review(original, translated, options, formatting)
         if output_path:
@@ -116,6 +124,8 @@ class TranslationService:
             total_words=total_words,
             processed_words=processed_words,
             review_items=review_items,
+            timing_stats=timing_result.stats,
+            timing_settings=options.subtitle_timing,
             resumed_cues=len(cached),
         )
 

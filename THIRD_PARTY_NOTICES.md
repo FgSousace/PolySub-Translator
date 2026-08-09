@@ -12,6 +12,9 @@ the following separately licensed components:
   https://ffmpeg.org/download.html and https://ffmpeg.org/legal.html
 - **ONNX Runtime** — MIT License — https://github.com/microsoft/onnxruntime
 - **PyTorch** — BSD-style License — https://github.com/pytorch/pytorch
+- **Transformers** — Apache License 2.0 — https://github.com/huggingface/transformers
+- **Hugging Face Hub client** — Apache License 2.0 — https://github.com/huggingface/huggingface_hub
+- **SentencePiece** — Apache License 2.0 — https://github.com/google/sentencepiece
 - **NVIDIA CUDA runtime libraries** — NVIDIA CUDA Toolkit End User License Agreement —
   https://docs.nvidia.com/cuda/eula/
 - **NVIDIA cuDNN runtime libraries** — NVIDIA cuDNN Software License Agreement —
@@ -21,4 +24,13 @@ the following separately licensed components:
 
 Downloaded speech-recognition and translation model weights remain subject to the licenses shown
 on their respective Hugging Face model pages. PolySub does not bundle those model weights in the
-installer.
+installer. The translation catalog currently links to these separately licensed model families:
+
+- **Google MADLAD-400 MT** — Apache License 2.0 — https://huggingface.co/google/madlad400-3b-mt
+- **Meta M2M100** — MIT License — https://huggingface.co/facebook/m2m100_418M
+- **Meta NLLB-200** — CC-BY-NC-4.0; research/noncommercial use —
+  https://huggingface.co/facebook/nllb-200-distilled-600M
+- **Meta mBART-50** — terms shown on each model card —
+  https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt
+- **Helsinki-NLP OPUS-MT models** — Apache License 2.0 —
+  https://huggingface.co/Helsinki-NLP/opus-mt-en-zlw

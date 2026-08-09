@@ -4,11 +4,11 @@
 interactive review.**
 
 PolySub tłumaczy kompletne pliki `.srt` albo sam przygotowuje napisy z filmu, zachowując numery
-kwestii, timestampy i podstawowe formatowanie. Użytkownik wybiera silnik lokalny albo DeepL API
+kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera silnik lokalny albo DeepL API
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.6-alpha` — trwałe napisy do TV, pełne użycie CPU i obsługa CUDA dla RTX 2080.
+> Status: `v0.4.7-alpha` — 20 opcjonalnych modeli AI i profile czytelności napisów.
 
 ## Najważniejsze funkcje
 
@@ -19,7 +19,8 @@ niejasnych fragmentów.
 - szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
 - wypalanie napisów na stałe w obrazie filmu z automatyczną akceleracją NVIDIA, Intel lub AMD;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
-- lokalny model M2M100 lub DeepL API;
+- katalog 20 lokalnych modeli AI z pobieraniem, usuwaniem i kontrolą zgodności języków;
+- lokalne silniki MADLAD-400, NLLB-200, M2M100, mBART-50 i OPUS albo DeepL API;
 - dynamiczna lista rzeczywiście wykrytych procesorów i kart NVIDIA, AMD oraz Intel;
 - tryb Auto wybierający najlepszy zgodny backend z bezpiecznym powrotem na CPU;
 - wybór limitu 25%, 50%, 75% albo 100% logicznych wątków procesora;
@@ -27,7 +28,8 @@ niejasnych fragmentów.
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
 - przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
 - automatyczne sprawdzanie najnowszej wersji oraz ręczny przycisk pobrania aktualizacji;
-- nienaruszalne identyfikatory i timestampy;
+- pięć profili czasu napisów: Zalecane, Krótsze, Dłuższe, Oryginalne i Własne;
+- zachowanie początku każdej wypowiedzi oraz automatyczne zapobieganie nachodzeniu napisów;
 - zapis awaryjny i automatyczne wznowienie przerwanego zadania;
 - informacje o postaciach, płci, relacjach i stylu jako dodatkowy kontekst;
 - edytor pokazujący oryginał i tłumaczenie obok siebie;
@@ -42,12 +44,70 @@ niejasnych fragmentów.
 | **Tłumacz automatycznie** | Tłumaczy cały plik bez zatrzymywania i od razu zapisuje wynik. | Szybki rezultat i napisy do późniejszej korekty. |
 | **Tłumacz z weryfikacją** | Używa dodatkowego kontekstu i otwiera edytor z oznaczonymi kwestiami. | Dialogi wymagające poprawnej płci, odmiany i spójności postaci. |
 
+## Czas wyświetlania napisów
+
+Program oblicza potrzebny czas na podstawie długości przetłumaczonego tekstu. Nie przesuwa początku
+żadnej wypowiedzi i nie łączy tekstów różnych postaci. Koniec starego napisu jest zawsze ograniczony
+początkiem następnego; jeżeli w źródle napisy już na siebie nachodzą, profil czytelności skraca
+poprzedni wpis. Gdy między kwestiami jest za mało miejsca, program zachowuje synchronizację i podaje
+w podsumowaniu, ilu napisów nie dało się w pełni wydłużyć.
+
+| Profil | Minimum | Tempo czytania | Zastosowanie |
+|---|---:|---:|---|
+| **Zalecane** | 1,5 s | maks. 17 znaków/s | Domyślny kompromis między synchronizacją a czytelnością. |
+| **Krótsze — szybkie dialogi** | 1,0 s | maks. 20 znaków/s | Dynamiczne sceny i osoby szybko czytające. |
+| **Dłuższe — wygodne czytanie** | 2,0 s | maks. 14 znaków/s | Spokojniejsze tempo i więcej czasu na przeczytanie. |
+| **Oryginalne timestampy** | bez zmian | bez zmian | Dokładne zachowanie wszystkich czasów źródłowego SRT. |
+| **Własne ustawienia** | 0,5–5,0 s | 8–30 znaków/s | Ręczne dopasowanie do swoich preferencji. |
+
+W trybach czytelności pojedynczy napis jest wydłużany tylko w ramach wolnego miejsca i ograniczonego
+limitu. Jeśli dwa wpisy zaczynają się dokładnie jednocześnie, program zgłasza ten nierozwiązywalny
+konflikt zamiast przesunąć dialog, połączyć postacie albo stworzyć nakładanie.
+
 ## Silniki
 
 | Silnik | Internet | Klucz | Obsługa języków | Uwagi |
 |---|---:|---:|---|---|
-| **M2M100 418M** | tylko przy pierwszym pobraniu | nie | około 100 | Darmowy, lokalny model; pobiera około 2 GB. |
+| **20 lokalnych modeli AI** | tylko przy pobieraniu dodatku | nie | zależnie od modelu | Działają lokalnie; użytkownik sam wybiera i usuwa modele. |
 | **DeepL API** | tak | tak | zgodnie z aktualną ofertą API | Lepszy kontekst i jakość dla obsługiwanych par językowych. |
+
+## Modele AI jako opcjonalne dodatki
+
+Przycisk **Pobierz / usuń…** otwiera menedżer modeli. Żaden model tłumaczeniowy nie jest
+wciskany do instalatora: użytkownik widzi szacowany rozmiar, wymagania RAM/VRAM i licencję, a
+dopiero po potwierdzeniu pliki są pobierane z oficjalnego repozytorium Hugging Face. Przerwane
+pobieranie można wznowić, a każdy model można później usunąć bez naruszania pozostałych.
+
+Kolejność 1–20 jest orientacyjnym rankingiem ogólnej jakości, a nie gwarancją dla każdego języka.
+Mały OPUS wyspecjalizowany w jednej parze może wypaść lepiej od większego modelu ogólnego właśnie
+dla tej pary.
+
+| # | Model | Pobieranie | Przeznaczenie | Licencja modelu |
+|---:|---|---:|---|---|
+| 1 | MADLAD-400 10B | ok. 43 GB | najwyższa jakość ogólna, bardzo mocny komputer | Apache-2.0 |
+| 2 | MADLAD-400 7B | ok. 33,3 GB | najwyższa jakość ogólna | Apache-2.0 |
+| 3 | MADLAD-400 3B | ok. 11,9 GB | bardzo wysoka jakość ogólna | Apache-2.0 |
+| 4 | NLLB-200 3.3B | ok. 17,6 GB | bardzo wysoka, 196 języków | CC-BY-NC-4.0 |
+| 5 | NLLB-200 Distilled 1.3B | ok. 5,5 GB | wysoka, lżejszy NLLB | CC-BY-NC-4.0 |
+| 6 | NLLB-200 1.3B | ok. 5,5 GB | wysoka, 196 języków | CC-BY-NC-4.0 |
+| 7 | M2M100 1.2B | ok. 4,9 GB | wysoka, około 100 języków | MIT |
+| 8 | NLLB-200 Distilled 600M | ok. 2,5 GB | dobry kompromis rozmiaru i jakości | CC-BY-NC-4.0 |
+| 9 | mBART-50 Many-to-Many | ok. 2,5 GB | tłumaczenie między 50 językami | sprawdź kartę modelu |
+| 10 | M2M100 418M | ok. 1,9 GB | domyślny i zgodny ze starszym PolySub | MIT |
+| 11 | mBART-50 English-to-Many | ok. 2,5 GB | angielski → obsługiwane języki | sprawdź kartę modelu |
+| 12 | mBART-50 Many-to-English | ok. 2,5 GB | obsługiwane języki → angielski | sprawdź kartę modelu |
+| 13 | OPUS English → Polish | ok. 320 MB | tylko angielski → polski | Apache-2.0 |
+| 14 | OPUS Polish → English | ok. 320 MB | tylko polski → angielski | Apache-2.0 |
+| 15 | OPUS German → Polish | ok. 320 MB | tylko niemiecki → polski | Apache-2.0 |
+| 16 | OPUS Spanish → Polish | ok. 320 MB | tylko hiszpański → polski | Apache-2.0 |
+| 17 | OPUS French → Polish | ok. 320 MB | tylko francuski → polski | Apache-2.0 |
+| 18 | OPUS Ukrainian → Polish | ok. 320 MB | tylko ukraiński → polski | Apache-2.0 |
+| 19 | OPUS Arabic → Polish | ok. 320 MB | tylko arabski → polski | Apache-2.0 |
+| 20 | OPUS Japanese → Polish | ok. 320 MB | tylko japoński → polski | Apache-2.0 |
+
+Modele NLLB są opublikowane jako modele badawcze na licencji **CC-BY-NC-4.0**, czyli do użytku
+niekomercyjnego. Menedżer pokazuje tę informację przed pobraniem. Szczegółowe warunki zawsze
+znajdują się pod przyciskiem **Karta i licencja modelu**.
 
 ## Automatyczne wykrywanie sprzętu
 
@@ -58,13 +118,13 @@ prawdziwą nazwę procesora i wszystkich kart graficznych obecnych w komputerze.
 - konkretną wykrytą kartę graficzną;
 - konkretny procesor.
 
-Program osobno sprawdza możliwość użycia urządzenia do M2M100 i do rozpoznawania mowy. Obsługuje
+Program osobno sprawdza możliwość użycia urządzenia do lokalnego modelu i do rozpoznawania mowy. Obsługuje
 backendy udostępnione przez zainstalowane środowisko, między innymi CUDA, ROCm i Intel XPU. Jeśli
 wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o tym i proponuje lub
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-W instalatorze Windows 0.4.6 znajduje się środowisko PyTorch CUDA 12.6 i cuDNN 9. Pakiet jest
+W instalatorze Windows od wersji 0.4.6 znajduje się środowisko PyTorch CUDA 12.6 i cuDNN 9. Pakiet jest
 przygotowany również dla kart NVIDIA z serii RTX 20, w tym RTX 2080; potrzebny jest aktualny
 sterownik NVIDIA. Sprzęt AMD i Intel nadal jest wykrywany dynamicznie, a przy wypalaniu filmu
 program potrafi użyć odpowiednio AMD AMF lub Intel Quick Sync, jeśli udostępnia je FFmpeg.
@@ -75,8 +135,9 @@ bezpieczny rozmiar partii tłumaczenia. Nie zmienia parametrów jakości modelu.
 zadań może chwilowo spaść podczas pobierania, odczytu plików albo etapów, których nie da się
 równolegle rozłożyć, ale program nie wykonuje sztucznego obciążenia bez użytecznej pracy.
 
-Kod projektu ma licencję MIT. Model `facebook/m2m100_418M` jest pobierany osobno z Hugging Face
-i również jest udostępniany na licencji MIT. PolySub nie dołącza modelu ani kluczy API do repozytorium.
+Kod projektu ma licencję MIT. Wagi wszystkich modeli są pobierane osobno i podlegają licencji
+widocznej w menedżerze oraz na oficjalnej karcie danego modelu. PolySub nie dołącza wag modeli ani
+kluczy API do repozytorium i instalatora.
 
 ## Dodatkowa funkcja: film zamiast gotowego SRT
 
@@ -135,12 +196,13 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
    - `PolySub-Translator-Installer.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
 3. Uruchom `PolySub-Translator-Setup.exe` i wybierz katalog instalacji.
 4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
-5. Po instalacji kreator pokaże krótką instrukcję oraz opcję uruchomienia programu.
+5. Po instalacji kreator pokaże krótką instrukcję, opcję uruchomienia programu oraz opcjonalne
+   pole **Wybierz i pobierz modele AI**.
 
 Przy kolejnych uruchomieniach klikaj skrót **PolySub Translator** na pulpicie albo w menu Start.
 Instalator działa dla bieżącego użytkownika i nie wymaga uprawnień administratora.
 
-Wersja 0.4.6 jest większa od 0.4.5, ponieważ zawiera biblioteki CUDA i cuDNN potrzebne do działania
+Wersje od 0.4.6 są większe od 0.4.5, ponieważ zawierają biblioteki CUDA i cuDNN potrzebne do działania
 na zgodnych kartach NVIDIA bez ręcznego instalowania środowiska programistycznego CUDA. Starsze
 wydania 0.4.5 oraz 0.4.4 pozostają dostępne na stronie Releases.
 
@@ -154,16 +216,16 @@ sam — pobieranie rozpoczyna się dopiero po kliknięciu przycisku przez użytk
 
 ### Pierwsze tłumaczenie lokalne
 
-Plik programu `.exe` zawiera silnik potrzebny do uruchomienia aplikacji, ale nie zawiera dużego
-modelu językowego. Przy pierwszym użyciu opcji **Lokalny AI (M2M100)** aplikacja pobierze około 2 GB.
-Może to potrwać kilka lub kilkanaście minut. Model zostaje w pamięci podręcznej Windows, więc przy
-następnych uruchomieniach i tłumaczeniach nie jest pobierany ponownie.
+Plik programu `.exe` zawiera silnik potrzebny do uruchomienia aplikacji, ale nie zawiera dużych
+wag językowych. Otwórz **Pobierz / usuń…**, wybierz jeden z 20 modeli i sprawdź jego wymagania.
+Domyślny M2M100 418M pobiera około 1,9 GB, a najmniejsze modele OPUS około 320 MB. Wybrany model
+zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie jest pobierany ponownie.
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydanie 0.4.6 nie zawiera nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6 i 0.4.7 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
-dostępna w historii wydań. Pełna wersja 0.4.6 jest publikowana jako `Setup.exe` i ZIP z instalatorem.
+dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 
 ## Instalacja z kodu źródłowego na Windows
 
@@ -186,7 +248,8 @@ pip install -e ".[local,fasttext,video]"
 polysub-gui
 ```
 
-Podczas pierwszego tłumaczenia zostanie pobrany model M2M100. Opcjonalny fastText zwiększa zakres
+Model wybiera się w menedżerze w aplikacji; można też użyć `polysub --list-models`. Opcjonalny
+fastText zwiększa zakres
 automatycznego rozpoznawania do 176 języków; bez niego działa lekki mechanizm zapasowy. Dodatek
 `video` zawiera obsługę FFmpeg i lokalnej transkrypcji Whisper.
 
@@ -212,13 +275,14 @@ polysub-gui
 1. Wybierz plik SRT albo film. Obsługa filmu jest funkcją dodatkową.
 2. Dla filmu bez napisów wybierz szybszy lub dokładniejszy wariant Whisper.
 3. Sprawdź automatycznie wykryty język i wybierz język docelowy.
-4. Wybierz lokalny model albo DeepL API.
+4. Wybierz lokalny AI albo DeepL API; przyciskiem **Pobierz / usuń…** zarządzaj 20 modelami.
 5. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
 6. Zostaw **Automatycznie** albo wybierz wykryty procesor lub kartę graficzną.
 7. Wybierz limit wykorzystania procesora; domyślne 100% daje maksymalną wydajność.
-8. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
-9. Rozpocznij tłumaczenie.
-10. Dla filmu wybierz **Dodaj przełączaną ścieżkę — szybko** albo
+8. Wybierz czas napisów; domyślne **Automatyczna czytelność — zalecane** nie dopuszcza nakładania.
+9. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
+10. Rozpocznij tłumaczenie.
+11. Dla filmu wybierz **Dodaj przełączaną ścieżkę — szybko** albo
     **Wypal napisy na obrazie — TV**.
 
 Wynik tłumaczenia otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw
@@ -227,8 +291,14 @@ otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowy
 ### Terminal
 
 ```powershell
+# Wyświetlenie rankingu, rozmiarów, licencji i stanu 20 modeli
+polysub --list-models
+
 # Lokalnie: automatyczne wykrycie angielskiego i tłumaczenie na polski
 polysub film.srt --target pl --engine local --mode automatic
+
+# Użycie lekkiego modelu wyspecjalizowanego w angielski → polski
+polysub film.srt --source en --target pl --engine local --local-model opus-en-pl
 
 # DeepL i ręczna kontrola oznaczonych kwestii
 $env:DEEPL_API_KEY = "TWÓJ_KLUCZ"
@@ -236,6 +306,10 @@ polysub film.srt --target pl --engine deepl --mode review
 
 # Informacje o postaciach z pliku tekstowego
 polysub film.srt --target pl --engine deepl --mode review --context-file postacie.txt
+
+# Dłuższe napisy albo własne tempo 13 znaków na sekundę i minimum 2,3 sekundy
+polysub film.srt --target pl --subtitle-timing comfortable
+polysub film.srt --target pl --subtitle-timing custom --minimum-subtitle-seconds 2.3 --subtitle-cps 13
 
 # Cały film: wyciągnięcie napisów lub transkrypcja audio, a następnie tłumaczenie
 polysub film.mp4 --target pl --engine local --speech-model medium
@@ -270,7 +344,8 @@ tekst źródłowy nie zawiera wymaganej informacji.
 - napisy wyciągnięte lub rozpoznane z filmu są zapisywane w osobnym pliku roboczym `.srt`;
 - film z dołączonymi napisami zawsze jest zapisywany jako osobny plik `.mp4` albo `.mkv`;
 - film z napisami wypalonymi na obrazie również powstaje jako osobny plik;
-- struktura jest sprawdzana przed zapisem;
+- liczba kwestii, identyfikatory i początki wypowiedzi są sprawdzane przed zapisem;
+- profile czytelności nigdy nie przedłużają starego napisu na początek następnej wypowiedzi;
 - niedokończone zadanie trafia do pliku `*.srt.polysub.json`;
 - plik awaryjny nie zawiera klucza API i jest usuwany po ukończeniu tłumaczenia;
 - `.env` oraz pliki awaryjne są ignorowane przez Git.
@@ -284,19 +359,23 @@ pytest
 ```
 
 GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12. Workflow Windows buduje
-`Setup.exe`, instaluje go w czystym katalogu, sprawdza dołączony README, oba sposoby dodawania
-napisów, ustawienia CPU, biblioteki CUDA/cuDNN, GUI, deinstalator i zawartość instalacyjnego ZIP-a,
+`Setup.exe`, instaluje go w czystym katalogu, sprawdza dołączony README, katalog 20 modeli, profile
+czasu bez nakładania, oba sposoby dodawania napisów, ustawienia CPU, biblioteki CUDA/cuDNN, GUI,
+deinstalator i zawartość ZIP-a,
 a dopiero potem publikuje pliki w Releases.
 
 ## Struktura projektu
 
 ```text
 src/polysub/
-├── engines/       # DeepL i lokalny M2M100
+├── engines/       # DeepL i pięć rodzin lokalnych modeli AI
 ├── cli.py         # interfejs terminalowy
 ├── gui.py         # aplikacja desktopowa
+├── translation_models.py # katalog 20 modeli i mapy języków
+├── model_downloads.py    # bezpieczne pobieranie, wznawianie i usuwanie
 ├── service.py     # tłumaczenie, kontekst, postęp i wznowienie
 ├── performance.py # limity CPU i konfiguracja bibliotek wielowątkowych
+├── subtitle_timing.py # profile czytelności i ochrona przed nakładaniem
 ├── subtitles.py   # parser oraz walidacja SRT
 ├── video.py       # FFmpeg, wbudowane napisy i lokalna transkrypcja Whisper
 ├── detector.py    # automatyczne wykrywanie języka

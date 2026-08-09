@@ -108,7 +108,12 @@ class SRTDocument:
         destination.write_text(self.compose(), encoding="utf-8", newline="\n")
         return destination
 
-    def assert_structure_matches(self, original: SRTDocument) -> None:
+    def assert_structure_matches(
+        self,
+        original: SRTDocument,
+        *,
+        allow_timing_changes: bool = False,
+    ) -> None:
         if len(self.cues) != len(original.cues):
             raise SubtitleFormatError("Liczba kwestii zmieniła się podczas tłumaczenia.")
         for position, (translated, source) in enumerate(
@@ -116,7 +121,7 @@ class SRTDocument:
         ):
             if translated.identifier != source.identifier:
                 raise SubtitleFormatError(f"Zmienił się numer/identyfikator kwestii {position}.")
-            if translated.timing != source.timing:
+            if not allow_timing_changes and translated.timing != source.timing:
                 raise SubtitleFormatError(f"Zmienił się timestamp kwestii {position}.")
 
 

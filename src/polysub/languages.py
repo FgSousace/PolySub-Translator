@@ -116,6 +116,8 @@ def language_options() -> list[str]:
 
 def parse_language_option(value: str) -> str:
     value = value.strip()
+    if value in {"", "—"}:
+        return ""
     if value.endswith(")") and "(" in value:
         return value.rsplit("(", 1)[1][:-1].strip().lower()
     return value.lower().replace("_", "-")

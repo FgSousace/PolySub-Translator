@@ -40,6 +40,8 @@ def test_structure_validation_rejects_timestamp_change() -> None:
     with pytest.raises(SubtitleFormatError, match="timestamp"):
         changed.assert_structure_matches(original)
 
+    changed.assert_structure_matches(original, allow_timing_changes=True)
+
 
 def test_word_counter_handles_polish_and_cjk() -> None:
     assert count_words("Zażółć gęślą jaźń") == 3

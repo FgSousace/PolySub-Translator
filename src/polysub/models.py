@@ -5,6 +5,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .subtitle_timing import SubtitleTimingSettings, SubtitleTimingStats
+
 if TYPE_CHECKING:
     from .subtitles import SRTDocument
 
@@ -47,4 +49,8 @@ class TranslationResult:
     total_words: int
     processed_words: int
     review_items: list[ReviewItem]
+    timing_stats: SubtitleTimingStats = field(default_factory=SubtitleTimingStats)
+    timing_settings: SubtitleTimingSettings = field(
+        default_factory=SubtitleTimingSettings.recommended
+    )
     resumed_cues: int = 0

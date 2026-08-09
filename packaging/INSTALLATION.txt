@@ -5,6 +5,8 @@ POLYSUB TRANSLATOR — INSTALACJA NA WINDOWS
 2. Wybierz folder, w którym ma zostać zainstalowany program.
 3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
 4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator.
+5. Opcjonalnie zaznacz „Wybierz i pobierz opcjonalne modele AI”, aby od razu
+   otworzyć katalog dodatków.
 
 Program nie wymaga instalowania Pythona, Gita ani FFmpeg.
 Instalacja odbywa się tylko dla bieżącego użytkownika i nie wymaga konta administratora.
@@ -12,8 +14,14 @@ Instalacja odbywa się tylko dla bieżącego użytkownika i nie wymaga konta adm
 PIERWSZE URUCHOMIENIE
 ---------------------
 
-Tryb lokalny może przy pierwszym użyciu pobrać model tłumaczeniowy. Kolejne
-tłumaczenia używają już modelu zapisanego na komputerze.
+Instalator nie zawiera wag modeli tłumaczeniowych. Przycisk „Pobierz / usuń…”
+pokazuje katalog 20 opcjonalnych modeli od najmocniejszych do najlżejszych.
+Przed pobraniem program podaje przybliżony rozmiar, wymagania RAM/VRAM i licencję.
+Przerwane pobieranie można wznowić, a niepotrzebny model usunąć z dysku.
+
+Domyślny M2M100 418M zajmuje około 1,9 GB. Najmniejsze wyspecjalizowane modele
+OPUS zajmują około 320 MB, a największy MADLAD-400 10B około 43 GB. Modele NLLB
+są przeznaczone do użytku badawczego i niekomercyjnego (CC-BY-NC-4.0).
 
 Program po uruchomieniu sprawdza w tle, czy na GitHubie jest nowsza wersja.
 Aktualizacja jest pobierana tylko po kliknięciu przycisku przez użytkownika.
@@ -25,6 +33,12 @@ graficzne wykryte na komputerze. Najbezpieczniej zostawić ustawienie
 Sekcja „Wykorzystanie procesora” pozwala wybrać 25%, 50%, 75% albo 100%
 logicznych wątków. Ustawienie 100% daje lokalnym modelom maksymalną dostępną
 wydajność, ale nie zmienia jakości tłumaczenia.
+
+Sekcja „Czas wyświetlania napisów” zawiera profile Zalecane, Krótsze, Dłuższe,
+Oryginalne i Własne. Profil Zalecane jest domyślny: dobiera czas do długości
+tekstu, ale nie przesuwa początku nowej wypowiedzi. Poprzedni napis nigdy nie
+jest wydłużany na dialog kolejnej postaci. Profil Własne pozwala ustawić minimum
+0,5–5 sekund oraz tempo 8–30 znaków na sekundę.
 
 Po tłumaczeniu filmu dostępne są dwa osobne przyciski:
 - „Dodaj przełączaną ścieżkę — szybko” nie przelicza obrazu;

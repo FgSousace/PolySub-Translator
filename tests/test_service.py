@@ -73,7 +73,8 @@ def test_translation_preserves_markup_and_reports_word_progress() -> None:
     assert any(message.startswith("Tłumaczenie 2 kwestii") for message in statuses)
     assert "Kontrola struktury, timestampów i formatowania..." in statuses
     assert statuses[-1] == "Przygotowywanie gotowego wyniku w pamięci..."
-    result.document.assert_structure_matches(document)
+    result.document.assert_structure_matches(document, allow_timing_changes=True)
+    assert result.timing_stats.adjusted_cues == 2
 
 
 def test_review_mode_marks_gender_ambiguity() -> None:

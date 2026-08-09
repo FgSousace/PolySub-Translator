@@ -53,7 +53,8 @@ for distribution in (
         pass
 
 hiddenimports += collect_submodules("fasttext")
-hiddenimports += collect_submodules("transformers.models.m2m_100")
+for model_package in ("m2m_100", "nllb", "mbart", "marian", "t5"):
+    hiddenimports += collect_submodules(f"transformers.models.{model_package}")
 
 a = Analysis(
     [str(PROJECT_ROOT / "packaging" / "windows_entry.py")],

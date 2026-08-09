@@ -27,10 +27,18 @@ class M2M100Engine(TranslationEngine):
         status: StatusCallback | None = None,
         allow_cpu_fallback: bool = True,
         cpu_usage_limit: int = DEFAULT_CPU_USAGE,
+        engine_id: str = "m2m100-418m",
+        display_name: str | None = None,
+        batch_cap: int = 16,
     ) -> None:
         status = status or (lambda _message: None)
         self._status = status
         self._allow_cpu_fallback = allow_cpu_fallback
+        self._batch_cap = max(int(batch_cap), 1)
+        # Keep the historical checkpoint identifier for the default model so work
+        # interrupted in PolySub 0.4.6 or older can still be resumed.
+        self.name = "m2m100" if engine_id == "m2m100-418m" else f"local:{engine_id}"
+        self.display_name = display_name or self.display_name
         self._cpu_allocation = cpu_allocation(cpu_usage_limit)
         configure_thread_environment(self._cpu_allocation)
         status("Ładowanie bibliotek lokalnego AI...")
@@ -62,7 +70,7 @@ class M2M100Engine(TranslationEngine):
                 f"Nie udało się wczytać modelu {model_name}: {exc}"
             ) from exc
         self._move_model_to_selected_device()
-        self.max_batch_size = translation_batch_size(self._cpu_allocation, self.device)
+        self.max_batch_size = self._resolved_batch_size()
         self.model.eval()
         status("Lokalny model AI jest gotowy.")
 
@@ -103,10 +111,7 @@ class M2M100Engine(TranslationEngine):
                     "Automatyczne przełączanie na CPU..."
                 )
                 self.device = "cpu"
-                self.max_batch_size = translation_batch_size(
-                    self._cpu_allocation,
-                    self.device,
-                )
+                self.max_batch_size = self._resolved_batch_size()
                 try:
                     self.model.to("cpu")
                     generated = self._generate(encoded_on_cpu, target_id, accurate)
@@ -147,10 +152,7 @@ class M2M100Engine(TranslationEngine):
                 "Automatyczne przełączanie na CPU..."
             )
             self.device = "cpu"
-            self.max_batch_size = translation_batch_size(
-                self._cpu_allocation,
-                self.device,
-            )
+            self.max_batch_size = self._resolved_batch_size()
             try:
                 self.model.to("cpu")
             except Exception as cpu_exc:
@@ -168,3 +170,9 @@ class M2M100Engine(TranslationEngine):
                 max_new_tokens=256,
                 early_stopping=True,
             )
+
+    def _resolved_batch_size(self) -> int:
+        return min(
+            translation_batch_size(self._cpu_allocation, self.device),
+            self._batch_cap,
+        )

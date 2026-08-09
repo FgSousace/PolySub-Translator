@@ -60,6 +60,8 @@ jobs:
             "--self-test-hardware",
             "--self-test-performance",
             "--self-test-nvidia-runtime",
+            "--self-test-model-catalog",
+            "--self-test-subtitle-timing",
             "--self-test-gui"
           )) {
             $process = Start-Process `
@@ -104,6 +106,8 @@ jobs:
             "--self-test-hardware",
             "--self-test-performance",
             "--self-test-nvidia-runtime",
+            "--self-test-model-catalog",
+            "--self-test-subtitle-timing",
             "--self-test-gui"
           )) {
             $process = Start-Process `

@@ -6,11 +6,19 @@ import sys
 from pathlib import Path
 
 from .detector import LanguageDetectionError, detect_language
-from .engines import DeepLEngine, M2M100Engine, TranslationEngineError
+from .engines import DeepLEngine, TranslationEngineError, create_local_engine
+from .model_downloads import ModelDownloadError, download_model, model_status
 from .models import TranslationMode
 from .performance import CPU_USAGE_OPTIONS, DEFAULT_CPU_USAGE
 from .service import TranslationOptions, TranslationService
+from .subtitle_timing import (
+    SubtitleTimingError,
+    SubtitleTimingMode,
+    SubtitleTimingSettings,
+    optimize_subtitle_timing,
+)
 from .subtitles import SRTDocument, SubtitleFormatError, default_output_path
+from .translation_models import DEFAULT_MODEL_ID, MODEL_CATALOG, get_model_spec
 from .video import (
     VIDEO_EXTENSIONS,
     VideoBurnError,
@@ -38,7 +46,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--engine",
         choices=("local", "deepl"),
         default="local",
-        help="Lokalny M2M100 albo DeepL API",
+        help="Pobrany lokalny model AI albo DeepL API",
+    )
+    parser.add_argument(
+        "--local-model",
+        choices=tuple(model.id for model in MODEL_CATALOG),
+        default=DEFAULT_MODEL_ID,
+        help="Identyfikator lokalnego modelu AI; listę pokazuje --list-models",
+    )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="Pokaż katalog 20 opcjonalnych modeli AI i zakończ",
+    )
+    parser.add_argument(
+        "--manage-models",
+        action="store_true",
+        help="Otwórz graficzny menedżer pobierania modeli AI",
     )
     parser.add_argument(
         "--mode",
@@ -66,6 +90,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CPU_USAGE,
         help="Maksymalna część logicznych wątków CPU: 25, 50, 75 albo 100%%",
     )
+    parser.add_argument(
+        "--subtitle-timing",
+        choices=tuple(mode.value for mode in SubtitleTimingMode),
+        default=SubtitleTimingMode.RECOMMENDED.value,
+        help="Czas napisów: original, dynamic, recommended, comfortable albo custom",
+    )
+    parser.add_argument(
+        "--minimum-subtitle-seconds",
+        type=float,
+        default=1.5,
+        help="Własny minimalny czas napisu dla --subtitle-timing custom (0.5–5.0)",
+    )
+    parser.add_argument(
+        "--subtitle-cps",
+        type=float,
+        default=17.0,
+        help="Własna maksymalna prędkość czytania dla trybu custom (8–30 znaków/s)",
+    )
     video_output_mode = parser.add_mutually_exclusive_group()
     video_output_mode.add_argument(
         "--attach-to-video",
@@ -89,6 +131,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.list_models:
+        _print_model_catalog()
+        return 0
+    if args.manage_models:
+        from .model_manager_window import run_model_manager
+
+        run_model_manager()
+        return 0
     if args.gui or args.input is None:
         from .gui import main as gui_main
 
@@ -120,11 +170,22 @@ def main(argv: list[str] | None = None) -> int:
         target = (args.target or _ask_target()).lower()
         if source == target:
             parser.error("Język źródłowy i docelowy nie mogą być takie same.")
+        subtitle_timing = SubtitleTimingSettings.for_mode(
+            args.subtitle_timing,
+            minimum_duration_seconds=args.minimum_subtitle_seconds,
+            max_chars_per_second=args.subtitle_cps,
+        )
 
         context_notes = ""
         if args.context_file:
             context_notes = args.context_file.read_text(encoding="utf-8")
-        engine = _create_engine(args.engine, cpu_usage_limit=args.cpu_limit)
+        engine = _create_engine(
+            args.engine,
+            local_model_id=args.local_model,
+            source_language=source,
+            target_language=target,
+            cpu_usage_limit=args.cpu_limit,
+        )
         mode = TranslationMode(args.mode)
         output = args.output or (
             translated_video_subtitle_path(media_path, target)
@@ -138,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
             mode=mode,
             context_notes=context_notes,
             use_checkpoint=not args.no_resume,
+            subtitle_timing=subtitle_timing,
         )
 
         print(f"Silnik: {engine.display_name}")
@@ -151,11 +213,18 @@ def main(argv: list[str] | None = None) -> int:
 
         if mode is TranslationMode.REVIEW:
             _review_interactively(result)
-            result.document.assert_structure_matches(document)
+            timing_result = optimize_subtitle_timing(
+                result.document,
+                result.timing_settings,
+                timing_source=document,
+            )
+            result.document = timing_result.document
+            result.timing_stats = timing_result.stats
             result.document.save(output)
             if result.checkpoint_path:
                 result.checkpoint_path.unlink(missing_ok=True)
         print(f"Gotowe: {output}")
+        print(result.timing_stats.summary)
         if result.review_items:
             print(f"Oznaczono do kontroli: {len(result.review_items)} kwestii")
         if args.attach_to_video:
@@ -191,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
         SubtitleFormatError,
         LanguageDetectionError,
         TranslationEngineError,
+        ModelDownloadError,
+        SubtitleTimingError,
         VideoBurnError,
         VideoImportError,
         VideoMuxError,
@@ -199,15 +270,54 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-def _create_engine(name: str, *, cpu_usage_limit: int = DEFAULT_CPU_USAGE):
+def _create_engine(
+    name: str,
+    *,
+    local_model_id: str = DEFAULT_MODEL_ID,
+    source_language: str,
+    target_language: str,
+    cpu_usage_limit: int = DEFAULT_CPU_USAGE,
+):
     if name == "deepl":
         if not os.getenv("DEEPL_API_KEY"):
             raise TranslationEngineError(
                 "Ustaw DEEPL_API_KEY w zmiennych środowiskowych. Klucza nie podawaj w komendzie."
             )
         return DeepLEngine()
-    print("Wczytywanie lokalnego modelu (pierwsze uruchomienie pobiera około 2 GB)...")
-    return M2M100Engine(cpu_usage_limit=cpu_usage_limit)
+    model = get_model_spec(local_model_id)
+    if not model.supports_pair(source_language, target_language):
+        raise TranslationEngineError(
+            f"Model {model.display_name} nie obsługuje pary "
+            f"{source_language} → {target_language}."
+        )
+    current = model_status(model)
+    source = current.snapshot_path
+    if source is None:
+        print(
+            f"Pobieranie {model.display_name} (około {model.size_label}; "
+            f"licencja {model.license_name})..."
+        )
+        if model.note:
+            print(f"Uwaga: {model.note}")
+        source = download_model(model, status=print)
+    else:
+        print(f"Wczytywanie pobranego modelu {model.display_name}...")
+    return create_local_engine(
+        model,
+        model_source=source,
+        cpu_usage_limit=cpu_usage_limit,
+        status=print,
+    )
+
+
+def _print_model_catalog() -> None:
+    print("20 opcjonalnych modeli AI (ranking orientacyjny):")
+    for model in MODEL_CATALOG:
+        state = model_status(model).status_label
+        print(
+            f"{model.rank:02d}. {model.id:<29} {model.display_name:<33} "
+            f"{model.size_label:>8}  {model.license_name:<20} {state}"
+        )
 
 
 def _ask_target() -> str:

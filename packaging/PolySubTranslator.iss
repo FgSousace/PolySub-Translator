@@ -1,5 +1,5 @@
 #define MyAppName "PolySub Translator"
-#define MyAppVersion "0.4.6"
+#define MyAppVersion "0.4.7"
 #define MyAppPublisher "FgSousace"
 #define MyAppURL "https://github.com/FgSousace/PolySub-Translator"
 #define MyAppExeName "PolySubTranslator.exe"
@@ -50,4 +50,5 @@ Name: "{autodesktop}\PolySub Translator"; Filename: "{app}\{#MyAppExeName}"; Wor
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--model-manager"; Description: "Wybierz i pobierz opcjonalne modele AI"; Flags: nowait postinstall skipifsilent unchecked
 Filename: "{app}\README.txt"; Description: "Otwórz instrukcję README"; Flags: postinstall shellexec skipifsilent unchecked

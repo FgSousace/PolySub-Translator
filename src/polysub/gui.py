@@ -23,12 +23,26 @@ from .compute_devices import (
     resolve_compute_device,
 )
 from .detector import detect_language
-from .engines import DeepLEngine, M2M100Engine
+from .engines import DeepLEngine, create_local_engine
 from .languages import language_name, language_options, parse_language_option
+from .model_downloads import download_model, model_status
+from .model_manager_window import ModelManagerWindow
 from .models import TranslationMode
 from .performance import DEFAULT_CPU_USAGE, cpu_allocation
 from .service import TranslationOptions, TranslationService
+from .subtitle_timing import (
+    SubtitleTimingError,
+    SubtitleTimingMode,
+    SubtitleTimingSettings,
+    optimize_subtitle_timing,
+)
 from .subtitles import SRTDocument, default_output_path
+from .translation_models import (
+    DEFAULT_MODEL_ID,
+    MODEL_CATALOG,
+    TranslationModelSpec,
+    get_model_spec,
+)
 from .updates import UpdateCheckError, UpdateInfo, check_for_updates
 from .video import (
     VIDEO_EXTENSIONS,
@@ -43,10 +57,15 @@ from .video import (
     translated_video_subtitle_path,
 )
 
+LOCAL_ENGINE_LABEL = "Lokalny AI — wybierz model"
+
 ENGINE_LABELS = {
-    "Lokalny AI (M2M100)": "local",
+    LOCAL_ENGINE_LABEL: "local",
     "DeepL API": "deepl",
 }
+
+MODEL_LABEL_TO_ID = {model.selection_label: model.id for model in MODEL_CATALOG}
+MODEL_ID_TO_LABEL = {model.id: model.selection_label for model in MODEL_CATALOG}
 
 SPEECH_MODEL_LABELS = {
     "Szybsze — Whisper small": "small",
@@ -59,6 +78,14 @@ CPU_USAGE_LABELS = {
     "50% — połowa procesora": 50,
     "25% — lekkie obciążenie": 25,
 }
+
+TIMING_PROFILE_CARDS = (
+    (SubtitleTimingMode.DYNAMIC, "⚡ Krótsze", "1,0 s • szybkie dialogi"),
+    (SubtitleTimingMode.RECOMMENDED, "★ Zalecane", "1,5 s • najlepszy balans"),
+    (SubtitleTimingMode.COMFORTABLE, "◷ Dłuższe", "2,0 s • spokojne czytanie"),
+    (SubtitleTimingMode.ORIGINAL, "↺ Oryginalne", "Czasy źródłowe 1:1"),
+    (SubtitleTimingMode.CUSTOM, "⚙ Własne", "Ustaw własne tempo"),
+)
 
 
 def enable_windows_dpi_awareness() -> None:
@@ -115,6 +142,8 @@ class PolySubApp(tk.Tk):
         self._device_label_to_id: dict[str, str] = {}
         self._selected_device_id = AUTO_DEVICE_ID
         self._device_detection_running = False
+        self._model_manager_window: ModelManagerWindow | None = None
+        self._timing_controls_locked = False
         self._build_style()
         self._build_ui()
         self.after(200, self._start_device_detection)
@@ -167,7 +196,7 @@ class PolySubApp(tk.Tk):
         ttk.Label(container, text="PolySub Translator", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             container,
-            text="Wykrywa język, tłumaczy napisy i nie zmienia timestampów.",
+            text="Wykrywa język, tłumaczy napisy i pilnuje ich czytelnej synchronizacji.",
         ).pack(anchor="w", pady=(2, 5))
 
         version_frame = ttk.Frame(container)
@@ -229,12 +258,22 @@ class PolySubApp(tk.Tk):
             language_frame, textvariable=self.source_var, values=language_options(), state="normal"
         )
         self.source_combo.grid(row=0, column=1, sticky="ew", padx=(8, 24))
+        self.source_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._refresh_model_status(),
+        )
+        self.source_combo.bind("<FocusOut>", lambda _event: self._refresh_model_status())
         ttk.Label(language_frame, text="Język docelowy:").grid(row=0, column=2, sticky="w")
         self.target_var = tk.StringVar(value=f"{language_name('pl')} (pl)")
         self.target_combo = ttk.Combobox(
             language_frame, textvariable=self.target_var, values=language_options(), state="normal"
         )
         self.target_combo.grid(row=0, column=3, sticky="ew", padx=(8, 0))
+        self.target_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._refresh_model_status(),
+        )
+        self.target_combo.bind("<FocusOut>", lambda _event: self._refresh_model_status())
         self.detected_var = tk.StringVar(value="Wybierz plik, aby wykryć język.")
         ttk.Label(language_frame, textvariable=self.detected_var).grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(8, 0)
@@ -247,17 +286,51 @@ class PolySubApp(tk.Tk):
 
         engine_frame = ttk.LabelFrame(settings, text="3. Silnik", padding=14)
         engine_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        self.engine_var = tk.StringVar(value="Lokalny AI (M2M100)")
-        engine_combo = ttk.Combobox(
+        self.engine_var = tk.StringVar(value=LOCAL_ENGINE_LABEL)
+        self.engine_combo = ttk.Combobox(
             engine_frame,
             textvariable=self.engine_var,
             values=list(ENGINE_LABELS),
             state="readonly",
         )
-        engine_combo.pack(fill="x")
-        engine_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_api_state())
+        self.engine_combo.pack(fill="x")
+        self.engine_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_api_state(),
+        )
+        ttk.Label(engine_frame, text="Model lokalnego AI:").pack(
+            anchor="w",
+            pady=(10, 3),
+        )
+        model_row = ttk.Frame(engine_frame)
+        model_row.pack(fill="x")
+        model_row.columnconfigure(0, weight=1)
+        self.model_var = tk.StringVar(value=MODEL_ID_TO_LABEL[DEFAULT_MODEL_ID])
+        self.model_combo = ttk.Combobox(
+            model_row,
+            textvariable=self.model_var,
+            values=list(MODEL_LABEL_TO_ID),
+            state="readonly",
+        )
+        self.model_combo.grid(row=0, column=0, sticky="ew")
+        self.model_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._model_selection_changed(),
+        )
+        self.model_manager_button = ttk.Button(
+            model_row,
+            text="Pobierz / usuń…",
+            command=self._open_model_manager,
+        )
+        self.model_manager_button.grid(row=0, column=1, padx=(8, 0))
+        self.model_status_var = tk.StringVar(value="Sprawdzanie modelu…")
+        ttk.Label(
+            engine_frame,
+            textvariable=self.model_status_var,
+            wraplength=420,
+        ).pack(anchor="w", pady=(5, 0))
         ttk.Label(engine_frame, text="Klucz DeepL API (nie jest zapisywany):").pack(
-            anchor="w", pady=(12, 3)
+            anchor="w", pady=(10, 3)
         )
         self.api_key_var = tk.StringVar(value=os.getenv("DEEPL_API_KEY", ""))
         self.api_entry = ttk.Entry(engine_frame, textvariable=self.api_key_var, show="•")
@@ -346,8 +419,154 @@ class PolySubApp(tk.Tk):
         ).grid(row=1, column=0, sticky="w", pady=(7, 0))
         self._update_cpu_usage_description()
 
+        timing_frame = ttk.LabelFrame(
+            container,
+            text="7. Czas wyświetlania napisów",
+            padding=12,
+        )
+        timing_frame.pack(fill="x", pady=(12, 0))
+        for column in range(3):
+            timing_frame.columnconfigure(column, weight=1, uniform="timing-profile")
+        ttk.Label(
+            timing_frame,
+            text=(
+                "Wybierz tempo czytania. Program zachowa początek każdej wypowiedzi "
+                "i wykorzysta tylko wolne miejsce przed następną."
+            ),
+            wraplength=820,
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+
+        self.timing_var = tk.StringVar(value=SubtitleTimingMode.RECOMMENDED.value)
+        self.timing_profile_buttons: dict[SubtitleTimingMode, tk.Button] = {}
+        primary_profiles = TIMING_PROFILE_CARDS[:3]
+        for column, (mode, title, detail) in enumerate(primary_profiles):
+            button = tk.Button(
+                timing_frame,
+                text=f"{title}\n{detail}",
+                command=lambda selected=mode: self._select_timing_mode(selected),
+                font=("Segoe UI", 10, "bold"),
+                justify="center",
+                cursor="hand2",
+                borderwidth=0,
+                relief="flat",
+                padx=10,
+                pady=11,
+                highlightthickness=1,
+            )
+            button.grid(
+                row=1,
+                column=column,
+                sticky="nsew",
+                padx=(0 if column == 0 else 4, 0 if column == 2 else 4),
+            )
+            self.timing_profile_buttons[mode] = button
+
+        secondary_profiles = ttk.Frame(timing_frame)
+        secondary_profiles.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        secondary_profiles.columnconfigure(0, weight=1, uniform="timing-secondary")
+        secondary_profiles.columnconfigure(1, weight=1, uniform="timing-secondary")
+        for column, (mode, title, detail) in enumerate(TIMING_PROFILE_CARDS[3:]):
+            button = tk.Button(
+                secondary_profiles,
+                text=f"{title}\n{detail}",
+                command=lambda selected=mode: self._select_timing_mode(selected),
+                font=("Segoe UI", 9, "bold"),
+                justify="center",
+                cursor="hand2",
+                borderwidth=0,
+                relief="flat",
+                padx=10,
+                pady=8,
+                highlightthickness=1,
+            )
+            button.grid(
+                row=0,
+                column=column,
+                sticky="nsew",
+                padx=(0, 4) if column == 0 else (4, 0),
+            )
+            self.timing_profile_buttons[mode] = button
+
+        self.timing_custom_frame = ttk.Frame(timing_frame, padding=(10, 8, 10, 2))
+        self.timing_custom_frame.grid(
+            row=3,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(8, 0),
+        )
+        self.timing_custom_frame.columnconfigure(1, weight=1)
+        self.timing_custom_frame.columnconfigure(3, weight=1)
+        ttk.Label(self.timing_custom_frame, text="Minimalny czas:").grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+        minimum_input = ttk.Frame(self.timing_custom_frame)
+        minimum_input.grid(row=0, column=1, sticky="w", padx=(7, 20))
+        self.minimum_duration_var = tk.StringVar(value="1.5")
+        self.minimum_duration_spinbox = ttk.Spinbox(
+            minimum_input,
+            from_=0.5,
+            to=5.0,
+            increment=0.1,
+            textvariable=self.minimum_duration_var,
+            width=8,
+            command=self._update_timing_description,
+        )
+        self.minimum_duration_spinbox.grid(row=0, column=0, sticky="w")
+        ttk.Label(minimum_input, text="s").grid(row=0, column=1, sticky="w", padx=(5, 0))
+        ttk.Label(self.timing_custom_frame, text="Tempo czytania:").grid(
+            row=0,
+            column=2,
+            sticky="w",
+        )
+        speed_input = ttk.Frame(self.timing_custom_frame)
+        speed_input.grid(row=0, column=3, sticky="w", padx=(7, 0))
+        self.max_cps_var = tk.StringVar(value="17")
+        self.max_cps_spinbox = ttk.Spinbox(
+            speed_input,
+            from_=8,
+            to=30,
+            increment=1,
+            textvariable=self.max_cps_var,
+            width=8,
+            command=self._update_timing_description,
+        )
+        self.max_cps_spinbox.grid(row=0, column=0, sticky="w")
+        ttk.Label(speed_input, text="znaków/s").grid(
+            row=0, column=1, sticky="w", padx=(5, 0)
+        )
+        for widget in (self.minimum_duration_spinbox, self.max_cps_spinbox):
+            widget.bind("<KeyRelease>", lambda _event: self._update_timing_description())
+            widget.bind("<FocusOut>", lambda _event: self._update_timing_description())
+
+        self.timing_status_var = tk.StringVar()
+        self.timing_status_label = tk.Label(
+            timing_frame,
+            textvariable=self.timing_status_var,
+            background="#eaf3ff",
+            foreground="#174a7e",
+            font=("Segoe UI", 9, "bold"),
+            justify="left",
+            anchor="w",
+            padx=12,
+            pady=10,
+            highlightthickness=1,
+            highlightbackground="#bdd7f2",
+            wraplength=820,
+        )
+        self.timing_status_label.grid(
+            row=4,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(10, 0),
+        )
+        self._update_timing_description()
+
         context_frame = ttk.LabelFrame(
-            container, text="7. Postacie i kontekst (opcjonalnie)", padding=12
+            container, text="8. Postacie i kontekst (opcjonalnie)", padding=12
         )
         context_frame.pack(fill="both", expand=True, pady=12)
         ttk.Label(
@@ -362,6 +581,58 @@ class PolySubApp(tk.Tk):
         self._build_activity_panel()
         self._build_action_bar()
         self._update_api_state()
+
+    def _selected_model(self) -> TranslationModelSpec:
+        model_id = MODEL_LABEL_TO_ID.get(self.model_var.get(), DEFAULT_MODEL_ID)
+        return get_model_spec(model_id)
+
+    def _model_selection_changed(self) -> None:
+        self._refresh_model_status()
+
+    def _refresh_model_status(self) -> None:
+        if not hasattr(self, "model_status_var"):
+            return
+        model = self._selected_model()
+        status = model_status(model)
+        source = parse_language_option(self.source_var.get())
+        target = parse_language_option(self.target_var.get())
+        if source and target:
+            compatibility = (
+                f"obsługuje {source} → {target}"
+                if model.supports_pair(source, target)
+                else f"nie obsługuje {source} → {target}"
+            )
+        else:
+            compatibility = "zgodność zostanie sprawdzona po wybraniu języków"
+        self.model_status_var.set(
+            f"{status.status_label} · {model.quality} · {compatibility}."
+        )
+
+    def _open_model_manager(self) -> None:
+        if self._model_manager_window is not None:
+            try:
+                if self._model_manager_window.winfo_exists():
+                    self._model_manager_window.lift()
+                    self._model_manager_window.focus_force()
+                    return
+            except tk.TclError:
+                self._model_manager_window = None
+        self._model_manager_window = ModelManagerWindow(
+            self,
+            selected_model_id=self._selected_model().id,
+            source_language=parse_language_option(self.source_var.get()),
+            target_language=parse_language_option(self.target_var.get()),
+            on_use=self._select_model,
+            on_close=self._model_manager_closed,
+        )
+
+    def _select_model(self, model_id: str) -> None:
+        self.model_var.set(MODEL_ID_TO_LABEL.get(model_id, MODEL_ID_TO_LABEL[DEFAULT_MODEL_ID]))
+        self._refresh_model_status()
+
+    def _model_manager_closed(self) -> None:
+        self._model_manager_window = None
+        self._refresh_model_status()
 
     def _start_device_detection(self) -> None:
         if self._device_detection_running:
@@ -491,6 +762,110 @@ class PolySubApp(tk.Tk):
             f"Model może użyć {allocation.threads} z "
             f"{allocation.logical_processors} logicznych wątków. "
             "Nie zmienia to jakości tłumaczenia."
+        )
+
+    def _selected_timing_mode(self) -> SubtitleTimingMode:
+        try:
+            return SubtitleTimingMode(self.timing_var.get())
+        except ValueError:
+            self.timing_var.set(SubtitleTimingMode.RECOMMENDED.value)
+            return SubtitleTimingMode.RECOMMENDED
+
+    def _select_timing_mode(self, mode: SubtitleTimingMode) -> None:
+        if self._timing_controls_locked:
+            return
+        self.timing_var.set(mode.value)
+        self._update_timing_description()
+
+    def _update_timing_card_styles(self, selected_mode: SubtitleTimingMode) -> None:
+        for mode, button in self.timing_profile_buttons.items():
+            selected = mode is selected_mode
+            button.configure(
+                background="#eaf3ff" if selected else "#ffffff",
+                foreground="#0b57d0" if selected else "#263746",
+                activebackground="#dbeaff" if selected else "#f3f7fb",
+                activeforeground="#0b57d0",
+                highlightbackground="#2f80ed" if selected else "#c9d5e2",
+                highlightcolor="#2f80ed" if selected else "#c9d5e2",
+                highlightthickness=2 if selected else 1,
+                disabledforeground="#6f7d8a" if selected else "#9aa4ad",
+                relief="flat",
+            )
+
+    def _update_timing_description(self) -> None:
+        mode = self._selected_timing_mode()
+        self._update_timing_card_styles(mode)
+        is_custom = mode is SubtitleTimingMode.CUSTOM
+        if is_custom:
+            self.timing_custom_frame.grid()
+        else:
+            self.timing_custom_frame.grid_remove()
+        custom_state = "normal" if is_custom and not self._timing_controls_locked else "disabled"
+        self.minimum_duration_spinbox.configure(state=custom_state)
+        self.max_cps_spinbox.configure(state=custom_state)
+        if mode is SubtitleTimingMode.ORIGINAL:
+            self.timing_status_var.set(
+                "↺ ORYGINALNE • wszystkie czasy źródłowe pozostaną dokładnie 1:1.\n"
+                "Ochrona przed zbyt krótkimi lub nachodzącymi napisami będzie wyłączona."
+            )
+            self.timing_status_label.configure(
+                background="#fff7e6",
+                foreground="#714600",
+                highlightbackground="#e7c66f",
+            )
+            return
+        if mode is SubtitleTimingMode.DYNAMIC:
+            settings = SubtitleTimingSettings.dynamic()
+            heading = "⚡ KRÓTSZE • dynamiczne sceny"
+        elif mode is SubtitleTimingMode.COMFORTABLE:
+            settings = SubtitleTimingSettings.comfortable()
+            heading = "◷ DŁUŻSZE • wygodne czytanie"
+        elif mode is SubtitleTimingMode.CUSTOM:
+            try:
+                settings = self._selected_timing_settings()
+            except SubtitleTimingError:
+                self.timing_status_var.set(
+                    "⚙ WŁASNE • wpisz minimum 0,5–5 s oraz tempo 8–30 znaków/s.\n"
+                    "Początek każdej nowej wypowiedzi nadal pozostanie chroniony."
+                )
+                self.timing_status_label.configure(
+                    background="#fff0f0",
+                    foreground="#8a2731",
+                    highlightbackground="#e5a6ac",
+                )
+                return
+            heading = "⚙ WŁASNE • Twoje tempo czytania"
+        else:
+            settings = SubtitleTimingSettings.recommended()
+            heading = "★ ZALECANE • najlepszy balans"
+        minimum = f"{settings.minimum_duration_ms / 1_000:g}".replace(".", ",")
+        safety_gap = f"{settings.safety_gap_ms / 1_000:g}".replace(".", ",")
+        self.timing_status_var.set(
+            f"{heading} • minimum {minimum} s • maks. "
+            f"{settings.max_chars_per_second:g} znaków/s • odstęp {safety_gap} s, "
+            "gdy jest miejsce.\n"
+            "✓ Start dialogu pozostaje bez zmian, a stary napis nie wejdzie na nową wypowiedź."
+        )
+        self.timing_status_label.configure(
+            background="#eaf3ff",
+            foreground="#174a7e",
+            highlightbackground="#bdd7f2",
+        )
+
+    def _selected_timing_settings(self) -> SubtitleTimingSettings:
+        mode = self._selected_timing_mode()
+        if mode is not SubtitleTimingMode.CUSTOM:
+            return SubtitleTimingSettings.for_mode(mode)
+        try:
+            minimum = float(self.minimum_duration_var.get().strip().replace(",", "."))
+            max_cps = float(self.max_cps_var.get().strip().replace(",", "."))
+        except ValueError as exc:
+            raise SubtitleTimingError(
+                "Własny czas i liczba znaków na sekundę muszą być liczbami."
+            ) from exc
+        return SubtitleTimingSettings.custom(
+            minimum_duration_seconds=minimum,
+            max_chars_per_second=max_cps,
         )
 
     def _start_update_check(self) -> None:
@@ -960,12 +1335,41 @@ class PolySubApp(tk.Tk):
         self._set_progress(0, document.total_words)
         self.status_var.set(status)
         self.start_button.configure(state="normal")
+        self._refresh_model_status()
 
     def _update_api_state(self) -> None:
-        state = "normal" if ENGINE_LABELS[self.engine_var.get()] == "deepl" else "disabled"
-        self.api_entry.configure(state=state)
+        is_deepl = ENGINE_LABELS[self.engine_var.get()] == "deepl"
+        self.api_entry.configure(state="normal" if is_deepl else "disabled")
+        self.model_combo.configure(state="disabled" if is_deepl else "readonly")
+        self._refresh_model_status()
         if hasattr(self, "device_status_var"):
             self._update_device_description()
+
+    def _lock_translation_settings(self, locked: bool) -> None:
+        self._timing_controls_locked = locked
+        if locked:
+            self.engine_combo.configure(state="disabled")
+            self.model_combo.configure(state="disabled")
+            self.model_manager_button.configure(state="disabled")
+            self.api_entry.configure(state="disabled")
+            self.device_combo.configure(state="disabled")
+            self.refresh_devices_button.configure(state="disabled")
+            self.cpu_usage_combo.configure(state="disabled")
+            for button in self.timing_profile_buttons.values():
+                button.configure(state="disabled", cursor="arrow")
+            self._update_timing_description()
+            return
+        self.engine_combo.configure(state="readonly")
+        self.model_manager_button.configure(state="normal")
+        self.device_combo.configure(state="readonly")
+        self.refresh_devices_button.configure(
+            state="disabled" if self._device_detection_running else "normal"
+        )
+        self.cpu_usage_combo.configure(state="readonly")
+        for button in self.timing_profile_buttons.values():
+            button.configure(state="normal", cursor="hand2")
+        self._update_timing_description()
+        self._update_api_state()
 
     def _start_translation(self) -> None:
         if self.document is None or self.source_path is None:
@@ -983,11 +1387,51 @@ class PolySubApp(tk.Tk):
                 "Te same języki", "Język źródłowy i docelowy muszą być różne.", parent=self
             )
             return
-        if ENGINE_LABELS[self.engine_var.get()] == "deepl" and not self.api_key_var.get().strip():
+        engine_kind = ENGINE_LABELS[self.engine_var.get()]
+        if engine_kind == "deepl" and not self.api_key_var.get().strip():
             messagebox.showwarning("Brak klucza", "Wpisz klucz DeepL API.", parent=self)
             return
+        try:
+            subtitle_timing = self._selected_timing_settings()
+        except SubtitleTimingError as exc:
+            messagebox.showwarning("Nieprawidłowy czas napisów", str(exc), parent=self)
+            return
 
-        engine_kind = ENGINE_LABELS[self.engine_var.get()]
+        local_model: TranslationModelSpec | None = None
+        local_model_source: Path | None = None
+        if engine_kind == "local":
+            local_model = self._selected_model()
+            if not local_model.supports_pair(source, target):
+                messagebox.showwarning(
+                    "Model nie obsługuje tej pary",
+                    f"{local_model.display_name} nie obsługuje tłumaczenia "
+                    f"{source} → {target}.\n\nWybierz inny model z listy albo otwórz "
+                    "Menedżer modeli AI.",
+                    parent=self,
+                )
+                return
+            local_status = model_status(local_model)
+            local_model_source = local_status.snapshot_path
+            if not local_status.installed:
+                model_note = f"Uwaga: {local_model.note}\n" if local_model.note else ""
+                resume_note = (
+                    "Na dysku jest nieukończone pobieranie, więc program je wznowi."
+                    if local_status.partial
+                    else "Model nie jest jeszcze zapisany na tym komputerze."
+                )
+                if not messagebox.askyesno(
+                    "Pobrać wybrany model AI?",
+                    f"{resume_note}\n\n"
+                    f"Model: {local_model.display_name}\n"
+                    f"Do pobrania: około {local_model.size_label}\n"
+                    f"Wymagania: {local_model.hardware_label}\n"
+                    f"Licencja: {local_model.license_name}\n"
+                    f"{model_note}\n"
+                    "Pobrać go teraz i po pobraniu automatycznie rozpocząć tłumaczenie?",
+                    parent=self,
+                ):
+                    return
+
         device_resolution = self._resolve_selected_device("translation")
         if (
             engine_kind == "local"
@@ -1003,6 +1447,7 @@ class PolySubApp(tk.Tk):
 
         self.start_button.configure(state="disabled")
         self.file_button.configure(state="disabled")
+        self._lock_translation_settings(True)
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
         self.translated_subtitle_path = None
@@ -1040,6 +1485,9 @@ class PolySubApp(tk.Tk):
                 api_key,
                 mode,
                 context_notes,
+                subtitle_timing,
+                local_model,
+                local_model_source,
                 device_resolution,
                 cpu_usage_limit,
             ),
@@ -1055,21 +1503,33 @@ class PolySubApp(tk.Tk):
         api_key: str,
         mode: TranslationMode,
         context_notes: str,
+        subtitle_timing: SubtitleTimingSettings,
+        local_model: TranslationModelSpec | None,
+        local_model_source: Path | None,
         device_resolution: DeviceResolution,
         cpu_usage_limit: int,
     ) -> None:
         try:
             if engine_kind == "local" and device_resolution.fallback_reason:
                 self.after(0, self._engine_status, device_resolution.fallback_reason)
-            engine = (
-                DeepLEngine(api_key)
-                if engine_kind == "deepl"
-                else M2M100Engine(
+            if engine_kind == "deepl":
+                engine = DeepLEngine(api_key)
+            else:
+                if local_model is None:
+                    raise RuntimeError("Nie wybrano lokalnego modelu AI.")
+                if local_model_source is None:
+                    local_model_source = download_model(
+                        local_model,
+                        status=lambda message: self.after(0, self._engine_status, message),
+                    )
+                    self.after(0, self._refresh_model_status)
+                engine = create_local_engine(
+                    local_model,
+                    model_source=local_model_source,
                     device=device_resolution.runtime_device,
                     status=lambda message: self.after(0, self._engine_status, message),
                     cpu_usage_limit=cpu_usage_limit,
                 )
-            )
             self.after(
                 0,
                 self._show_stage,
@@ -1081,6 +1541,7 @@ class PolySubApp(tk.Tk):
                 target_language=target,
                 mode=mode,
                 context_notes=context_notes,
+                subtitle_timing=subtitle_timing,
             )
             service = TranslationService(engine)
             output = self._translation_output_path(target)
@@ -1108,7 +1569,16 @@ class PolySubApp(tk.Tk):
             self._show_stage(2, message)
         elif lowered.startswith("tłumaczenie "):
             self._show_stage(3, message, determinate=True)
-        elif "kontrola" in lowered or "analizowanie jakości" in lowered:
+        elif any(
+            marker in lowered
+            for marker in (
+                "kontrola",
+                "analizowanie jakości",
+                "czasu wyświetlania",
+                "dopasowano czas",
+                "timestampów",
+            )
+        ):
             self._show_stage(4, message)
         else:
             self._show_stage(5, message)
@@ -1122,6 +1592,7 @@ class PolySubApp(tk.Tk):
     ) -> None:
         self.start_button.configure(state="normal")
         self.file_button.configure(state="normal")
+        self._lock_translation_settings(False)
         if mode is TranslationMode.REVIEW:
             finished_message = (
                 f"Tłumaczenie gotowe — {len(result.review_items)} kwestii oznaczono."
@@ -1133,6 +1604,8 @@ class PolySubApp(tk.Tk):
                 self.document,
                 result.document,
                 result.review_items,
+                result.timing_stats,
+                result.timing_settings,
                 output,
                 result.checkpoint_path,
                 on_saved=lambda saved_path: self._translated_subtitle_ready(
@@ -1152,13 +1625,15 @@ class PolySubApp(tk.Tk):
         )
         messagebox.showinfo(
             "Tłumaczenie gotowe",
-            f"Zapisano plik:\n{output}{suffix}",
+            f"Zapisano plik:\n{output}\n\n{result.timing_stats.summary}{suffix}",
             parent=self,
         )
 
     def _translation_failed(self, message: str) -> None:
         self.start_button.configure(state="normal")
         self.file_button.configure(state="normal")
+        self._lock_translation_settings(False)
+        self._refresh_model_status()
         self._update_attach_button()
         self._fail_activity("Tłumaczenie przerwane z powodu błędu")
         messagebox.showerror("Tłumaczenie nie powiodło się", message, parent=self)
@@ -1441,6 +1916,8 @@ class ReviewWindow(tk.Toplevel):
         original,
         translated,
         review_items,
+        timing_stats,
+        timing_settings,
         output_path: Path,
         checkpoint_path: Path | None,
         on_saved: Callable[[Path], None] | None = None,
@@ -1451,6 +1928,8 @@ class ReviewWindow(tk.Toplevel):
         self.minsize(900, 600)
         self.original = original
         self.translated = translated
+        self.timing_stats = timing_stats
+        self.timing_settings = timing_settings
         self.output_path = output_path
         self.checkpoint_path = checkpoint_path
         self.on_saved = on_saved
@@ -1525,7 +2004,7 @@ class ReviewWindow(tk.Toplevel):
                 iid=str(position),
                 values=(
                     source.identifier,
-                    source.timing,
+                    target.timing,
                     source.visible_text.replace("\n", " / "),
                     target.visible_text.replace("\n", " / "),
                     status,
@@ -1571,13 +2050,23 @@ class ReviewWindow(tk.Toplevel):
 
     def _save(self) -> None:
         self._apply_edit()
-        self.translated.assert_structure_matches(self.original)
+        timing_result = optimize_subtitle_timing(
+            self.translated,
+            self.timing_settings,
+            timing_source=self.original,
+        )
+        self.translated = timing_result.document
+        self.timing_stats = timing_result.stats
         self.translated.save(self.output_path)
         if self.checkpoint_path:
             self.checkpoint_path.unlink(missing_ok=True)
         if self.on_saved:
             self.on_saved(self.output_path)
-        messagebox.showinfo("Zapisano", f"Gotowy plik:\n{self.output_path}", parent=self)
+        messagebox.showinfo(
+            "Zapisano",
+            f"Gotowy plik:\n{self.output_path}\n\n{self.timing_stats.summary}",
+            parent=self,
+        )
 
     def _save_as(self) -> None:
         selected = filedialog.asksaveasfilename(

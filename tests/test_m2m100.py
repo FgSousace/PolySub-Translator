@@ -70,6 +70,7 @@ def test_cpu_limit_configures_real_torch_threads_and_larger_batch(monkeypatch) -
 
     assert thread_calls == [("intra", 16), ("interop", 1)]
     assert engine.max_batch_size == 16
+    assert engine.name == "m2m100"
     assert any("16 z 16 logicznych wątków" in status for status in statuses)
 
 
