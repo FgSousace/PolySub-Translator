@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+
+def _record_self_test_trace(message: str) -> None:
+    trace_path = os.getenv("POLYSUB_SELF_TEST_TRACE")
+    if not trace_path:
+        return
+    try:
+        with Path(trace_path).open("a", encoding="utf-8") as trace_file:
+            trace_file.write(message + "\n")
+    except OSError:
+        pass
 
 
 def main() -> None:
@@ -251,6 +264,7 @@ def main() -> None:
         return
 
     if "--self-test-gui" in sys.argv:
+        _record_self_test_trace("GUI: importowanie modułów")
         from polysub.appearance import (
             CLASSIC_INTERFACE,
             MODERN_INTERFACE,
@@ -263,6 +277,7 @@ def main() -> None:
         from polysub.subtitle_timing import SubtitleTimingMode
         from polysub.translation_models import get_model_spec
 
+        _record_self_test_trace("GUI: tworzenie aplikacji")
         with TemporaryDirectory(prefix="polysub-appearance-test-") as temporary_directory:
             store = AppearanceSettingsStore(Path(temporary_directory) / "appearance.json")
             app = PolySubApp(
@@ -273,9 +288,11 @@ def main() -> None:
                 appearance_store=store,
                 schedule_background_tasks=False,
             )
+            _record_self_test_trace("GUI: aplikacja utworzona")
             try:
                 app.withdraw()
                 app.update_idletasks()
+                _record_self_test_trace("GUI: pierwsze rozmieszczenie zakończone")
                 required_widgets = (
                     app.stage_progress_bar,
                     app.progress_bar,
@@ -302,6 +319,7 @@ def main() -> None:
                 )
                 if any(not widget.winfo_manager() for widget in required_widgets):
                     raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
+                _record_self_test_trace("GUI: wymagane kontrolki są rozmieszczone")
                 if app.start_button.winfo_manager() != "grid":
                     raise RuntimeError("Przycisk rozpoczęcia nie jest przypięty do dolnego paska.")
                 if "Wyszukaj napisy" not in app.start_button.cget("text"):
@@ -324,6 +342,7 @@ def main() -> None:
                     model_id = MODEL_LABEL_TO_ID.get(label)
                     if model_id is None or not model_status(get_model_spec(model_id)).installed:
                         raise RuntimeError("Główna lista pokazała model, który nie jest gotowy.")
+                _record_self_test_trace("GUI: tryb i lista modeli są poprawne")
                 if len(app._modern_nav_buttons) != 5:
                     raise RuntimeError("Nowy interfejs nie zawiera pięciu skrótów nawigacji.")
                 if set(app._content_sections) != {
@@ -361,15 +380,19 @@ def main() -> None:
                     raise RuntimeError("Tryb tłumaczenia nie został zablokowany podczas pracy.")
                 app._lock_translation_settings(False)
                 app._select_timing_mode(SubtitleTimingMode.RECOMMENDED)
+                _record_self_test_trace("GUI: profile czasu i blokady są poprawne")
 
                 app.target_var.set("English (en)")
                 app.context_text.insert("1.0", "Zachowaj luźny ton.")
                 app._apply_appearance(MODERN_INTERFACE, "oled")
+                _record_self_test_trace("GUI: motyw OLED zastosowany")
                 if app.theme.id != "oled" or app.cget("background") != "#000000":
                     raise RuntimeError("Motyw OLED nie został zastosowany do aplikacji.")
 
                 app._apply_appearance(CLASSIC_INTERFACE, "oled")
+                _record_self_test_trace("GUI: klasyczny interfejs zbudowany")
                 app.update_idletasks()
+                _record_self_test_trace("GUI: klasyczny interfejs rozmieszczony")
                 if app._modern_nav_buttons:
                     raise RuntimeError("Klasyczny interfejs nadal pokazuje nowy panel boczny.")
                 if app.target_var.get() != "English (en)":
@@ -381,8 +404,11 @@ def main() -> None:
                     theme="oled",
                 ):
                     raise RuntimeError("Wybrany wygląd nie został zapamiętany.")
+                _record_self_test_trace("GUI: wszystkie asercje zakończone")
             finally:
+                _record_self_test_trace("GUI: zamykanie aplikacji")
                 app.destroy()
+                _record_self_test_trace("GUI: aplikacja zamknięta")
         return
 
     try:
@@ -402,4 +428,24 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        is_self_test = "--version" in sys.argv or any(
+            argument.startswith("--self-test-") for argument in sys.argv[1:]
+        )
+        if not is_self_test:
+            raise
+        details = traceback.format_exc()
+        trace_path = os.getenv("POLYSUB_SELF_TEST_TRACE")
+        if trace_path:
+            try:
+                with Path(trace_path).open("a", encoding="utf-8") as trace_file:
+                    trace_file.write("BŁĄD:\n" + details)
+            except OSError:
+                pass
+        try:
+            print(details, file=sys.stderr)
+        except OSError:
+            pass
+        raise SystemExit(1) from None
