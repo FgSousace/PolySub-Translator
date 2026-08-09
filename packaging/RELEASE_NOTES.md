@@ -1,4 +1,25 @@
-## Nowości w wersji 0.4.7
+## Nowości w wersji 0.4.8
+
+- całkowicie odświeżony, domyślny interfejs **Nowoczesny** ma stały panel boczny i pięć skrótów:
+  Start, Tłumaczenie, Modele AI, Film i sprzęt oraz Ustawienia;
+- poprzedni układ pozostaje dostępny jako **Klasyczny 0.4.7** i można do niego wrócić w każdej
+  chwili;
+- przełączanie układu zachowuje wybrany plik, języki, silnik, model, profil napisów i kontekst;
+- dodano 10 motywów: Automatyczny — system, OLED Black, Midnight Blue, Graphite Pro, Cyber Neon,
+  Aurora Violet, Emerald Matrix, Crimson Studio, Arctic Light i Warm Sand;
+- domyślny Midnight Blue zapewnia czytelny, nowoczesny ciemny wygląd, a OLED Black używa
+  prawdziwej czerni `#000000`;
+- szybki wybór motywu znajduje się na dole panelu bocznego, a pełne ustawienia wyglądu mają opis
+  każdego wariantu i przycisk przywrócenia ustawień domyślnych;
+- wybrany interfejs i motyw są trwale zapisywane w profilu użytkownika;
+- motywy obejmują główne okno, kontrolki, pola tekstowe, menedżer modeli i okno weryfikacji;
+- test gotowego EXE przełącza nowy i klasyczny układ, sprawdza wszystkie najważniejsze kontrolki,
+  motyw OLED oraz zachowanie danych formularza;
+- wydanie zawiera `Setup.exe` i ZIP z instalatorem. Nowa paczka portable nie jest tworzona.
+
+Wersje 0.4.7, 0.4.6, 0.4.5 i 0.4.4 pozostają osobno w historii GitHub Releases.
+
+## Wcześniej dodane w wersji 0.4.7
 
 - nowa sekcja **Czas wyświetlania napisów** udostępnia pięć czytelnych kafelków: Zalecane,
   Krótsze, Dłuższe, Oryginalne oraz Własne; zaznaczony profil i jego parametry są wyraźnie
@@ -99,6 +120,6 @@ Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 Windows SmartScreen może wyświetlić ostrzeżenie, ponieważ instalator nie ma jeszcze płatnego
 certyfikatu podpisu cyfrowego. W takim przypadku wybierz **Więcej informacji → Uruchom mimo to**.
 
-Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6 i 0.4.7 nie zawierają nowej
+Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6, 0.4.7 i 0.4.8 nie zawierają nowej
 paczki portable, ponieważ dołączone biblioteki CUDA przekroczyłyby limit pojedynczego pliku GitHub
 Releases. Portable z wersji 0.4.5 nadal pozostaje dostępne w historii wydań.

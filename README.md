@@ -8,7 +8,7 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.7-alpha` — 20 opcjonalnych modeli AI i profile czytelności napisów.
+> Status: `v0.4.8-alpha` — nowoczesny interfejs, 10 motywów, 20 opcjonalnych modeli AI i profile czytelności napisów.
 
 ## Najważniejsze funkcje
 
@@ -28,6 +28,7 @@ niejasnych fragmentów.
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
 - przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
 - automatyczne sprawdzanie najnowszej wersji oraz ręczny przycisk pobrania aktualizacji;
+- wybór nowoczesnego albo klasycznego interfejsu oraz 10 zapamiętywanych motywów;
 - pięć profili czasu napisów: Zalecane, Krótsze, Dłuższe, Oryginalne i Własne;
 - zachowanie początku każdej wypowiedzi oraz automatyczne zapobieganie nachodzeniu napisów;
 - zapis awaryjny i automatyczne wznowienie przerwanego zadania;
@@ -43,6 +44,20 @@ niejasnych fragmentów.
 |---|---|---|
 | **Tłumacz automatycznie** | Tłumaczy cały plik bez zatrzymywania i od razu zapisuje wynik. | Szybki rezultat i napisy do późniejszej korekty. |
 | **Tłumacz z weryfikacją** | Używa dodatkowego kontekstu i otwiera edytor z oznaczonymi kwestiami. | Dialogi wymagające poprawnej płci, odmiany i spójności postaci. |
+
+## Interfejs i motywy
+
+W sekcji **Ustawienia → Wygląd aplikacji** można przełączać się między dwoma układami bez
+utraty wybranego pliku, języków, modelu ani wpisanego kontekstu:
+
+- **Nowoczesny** — domyślny układ z nieruchomym panelem bocznym, skrótami do pięciu sekcji,
+  kartami ustawień i stale widocznym paskiem postępu;
+- **Klasyczny 0.4.7** — zachowany przewijany układ poprzedniego wydania.
+
+Motyw zmienia się natychmiast, a wybrany interfejs i kolory są zapisywane dla następnych
+uruchomień. Dostępne motywy to: Automatyczny — system, OLED Black, Midnight Blue, Graphite Pro,
+Cyber Neon, Aurora Violet, Emerald Matrix, Crimson Studio, Arctic Light oraz Warm Sand. Domyślny
+jest czytelny **Midnight Blue**, a **OLED Black** używa prawdziwie czarnego tła.
 
 ## Czas wyświetlania napisów
 
@@ -223,7 +238,7 @@ zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie j
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6 i 0.4.7 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6, 0.4.7 i 0.4.8 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 

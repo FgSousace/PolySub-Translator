@@ -14,6 +14,11 @@ Instalacja odbywa się tylko dla bieżącego użytkownika i nie wymaga konta adm
 PIERWSZE URUCHOMIENIE
 ---------------------
 
+Domyślnie program otwiera nowoczesny interfejs Midnight Blue z panelem bocznym.
+W sekcji „Ustawienia” można wybrać interfejs Nowoczesny albo Klasyczny 0.4.7
+oraz jeden z 10 motywów, w tym OLED Black, jasny Arctic Light i automatyczny
+motyw systemowy. Wygląd jest zapamiętywany dla następnych uruchomień.
+
 Instalator nie zawiera wag modeli tłumaczeniowych. Przycisk „Pobierz / usuń…”
 pokazuje katalog 20 opcjonalnych modeli od najmocniejszych do najlżejszych.
 Przed pobraniem program podaje przybliżony rozmiar, wymagania RAM/VRAM i licencję.

@@ -210,55 +210,102 @@ def main() -> None:
         return
 
     if "--self-test-gui" in sys.argv:
+        from polysub.appearance import (
+            CLASSIC_INTERFACE,
+            MODERN_INTERFACE,
+            AppearanceSettings,
+            AppearanceSettingsStore,
+        )
         from polysub.gui import PolySubApp
         from polysub.subtitle_timing import SubtitleTimingMode
 
-        app = PolySubApp()
-        try:
-            app.withdraw()
-            app.update_idletasks()
-            required_widgets = (
-                app.stage_progress_bar,
-                app.progress_bar,
-                app.activity_log,
-                app.start_button,
-                app.check_update_button,
-                app.device_combo,
-                app.refresh_devices_button,
-                app.cpu_usage_combo,
-                *app.timing_profile_buttons.values(),
-                app.minimum_duration_spinbox,
-                app.max_cps_spinbox,
-                app.timing_status_label,
-                app.model_combo,
-                app.model_manager_button,
-                app.burn_button,
+        with TemporaryDirectory(prefix="polysub-appearance-test-") as temporary_directory:
+            store = AppearanceSettingsStore(Path(temporary_directory) / "appearance.json")
+            app = PolySubApp(
+                appearance_settings=AppearanceSettings(
+                    interface=MODERN_INTERFACE,
+                    theme="midnight",
+                ),
+                appearance_store=store,
+                schedule_background_tasks=False,
             )
-            if any(not widget.winfo_manager() for widget in required_widgets):
-                raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
-            if app.start_button.winfo_manager() != "grid":
-                raise RuntimeError("Przycisk rozpoczęcia nie jest przypięty do dolnego paska.")
-            if len(app.timing_profile_buttons) != 5:
-                raise RuntimeError("Panel czasu napisów nie zawiera pięciu profili.")
-            if app.timing_var.get() != "recommended":
-                raise RuntimeError("Profil Zalecane nie jest domyślnie zaznaczony.")
-            recommended = app.timing_profile_buttons[SubtitleTimingMode.RECOMMENDED]
-            if recommended.cget("background") != "#eaf3ff":
-                raise RuntimeError("Domyślny profil Zalecane nie jest wizualnie wyróżniony.")
-            app._select_timing_mode(SubtitleTimingMode.CUSTOM)
-            app.update_idletasks()
-            if app.timing_custom_frame.winfo_manager() != "grid":
-                raise RuntimeError("Pola profilu Własne nie pojawiły się po wybraniu kafelka.")
-            app._lock_translation_settings(True)
-            if any(
-                button.cget("state") != "disabled"
-                for button in app.timing_profile_buttons.values()
-            ):
-                raise RuntimeError("Kafelki czasu nie zostały zablokowane podczas pracy.")
-            app._lock_translation_settings(False)
-            app._select_timing_mode(SubtitleTimingMode.RECOMMENDED)
-        finally:
-            app.destroy()
+            try:
+                app.withdraw()
+                app.update_idletasks()
+                required_widgets = (
+                    app.stage_progress_bar,
+                    app.progress_bar,
+                    app.activity_log,
+                    app.start_button,
+                    app.check_update_button,
+                    app.device_combo,
+                    app.refresh_devices_button,
+                    app.cpu_usage_combo,
+                    *app.timing_profile_buttons.values(),
+                    app.minimum_duration_spinbox,
+                    app.max_cps_spinbox,
+                    app.timing_status_label,
+                    app.model_combo,
+                    app.model_manager_button,
+                    app.burn_button,
+                    app.appearance_interface_combo,
+                    app.appearance_theme_combo,
+                )
+                if any(not widget.winfo_manager() for widget in required_widgets):
+                    raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
+                if app.start_button.winfo_manager() != "grid":
+                    raise RuntimeError("Przycisk rozpoczęcia nie jest przypięty do dolnego paska.")
+                if len(app._modern_nav_buttons) != 5:
+                    raise RuntimeError("Nowy interfejs nie zawiera pięciu skrótów nawigacji.")
+                if set(app._content_sections) != {
+                    "start",
+                    "translation",
+                    "models",
+                    "film",
+                    "settings",
+                }:
+                    raise RuntimeError("Nowa nawigacja nie prowadzi do wszystkich sekcji.")
+                if len(app.timing_profile_buttons) != 5:
+                    raise RuntimeError("Panel czasu napisów nie zawiera pięciu profili.")
+                if app.timing_var.get() != "recommended":
+                    raise RuntimeError("Profil Zalecane nie jest domyślnie zaznaczony.")
+                recommended = app.timing_profile_buttons[SubtitleTimingMode.RECOMMENDED]
+                if recommended.cget("background") != app.theme.selected:
+                    raise RuntimeError("Domyślny profil Zalecane nie jest wizualnie wyróżniony.")
+                app._select_timing_mode(SubtitleTimingMode.CUSTOM)
+                app.update_idletasks()
+                if app.timing_custom_frame.winfo_manager() != "grid":
+                    raise RuntimeError("Pola profilu Własne nie pojawiły się po wybraniu kafelka.")
+                app._lock_translation_settings(True)
+                if any(
+                    button.cget("state") != "disabled"
+                    for button in app.timing_profile_buttons.values()
+                ):
+                    raise RuntimeError("Kafelki czasu nie zostały zablokowane podczas pracy.")
+                app._lock_translation_settings(False)
+                app._select_timing_mode(SubtitleTimingMode.RECOMMENDED)
+
+                app.target_var.set("English (en)")
+                app.context_text.insert("1.0", "Zachowaj luźny ton.")
+                app._apply_appearance(MODERN_INTERFACE, "oled")
+                if app.theme.id != "oled" or app.cget("background") != "#000000":
+                    raise RuntimeError("Motyw OLED nie został zastosowany do aplikacji.")
+
+                app._apply_appearance(CLASSIC_INTERFACE, "oled")
+                app.update_idletasks()
+                if app._modern_nav_buttons:
+                    raise RuntimeError("Klasyczny interfejs nadal pokazuje nowy panel boczny.")
+                if app.target_var.get() != "English (en)":
+                    raise RuntimeError("Przełączenie interfejsu zgubiło ustawienia formularza.")
+                if app.context_text.get("1.0", "end-1c") != "Zachowaj luźny ton.":
+                    raise RuntimeError("Przełączenie interfejsu zgubiło kontekst tłumaczenia.")
+                if store.load() != AppearanceSettings(
+                    interface=CLASSIC_INTERFACE,
+                    theme="oled",
+                ):
+                    raise RuntimeError("Wybrany wygląd nie został zapamiętany.")
+            finally:
+                app.destroy()
         return
 
     try:

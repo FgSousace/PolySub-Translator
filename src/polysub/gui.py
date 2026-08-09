@@ -12,6 +12,19 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import __version__
+from .appearance import (
+    DEFAULT_INTERFACE,
+    DEFAULT_THEME,
+    INTERFACE_IDS_BY_LABEL,
+    INTERFACE_LABELS,
+    MODERN_INTERFACE,
+    THEME_IDS_BY_LABEL,
+    THEMES,
+    AppearanceSettings,
+    AppearanceSettingsStore,
+    ThemePalette,
+    resolve_theme,
+)
 from .compute_devices import (
     AUTO_DEVICE_ID,
     AUTO_DEVICE_LABEL,
@@ -100,11 +113,16 @@ def enable_windows_dpi_awareness() -> None:
             pass
 
 
-def recommended_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
+def recommended_window_size(
+    screen_width: int,
+    screen_height: int,
+    *,
+    target_width: int = 1000,
+) -> tuple[int, int]:
     """Fit the main window to the usable screen without hiding its bottom actions."""
     available_width = max(screen_width - 40, min(screen_width, 360))
     available_height = max(screen_height - 80, min(screen_height, 420))
-    return min(1000, available_width), min(900, available_height)
+    return min(target_width, available_width), min(900, available_height)
 
 
 def format_elapsed(seconds: float) -> str:
@@ -115,17 +133,42 @@ def format_elapsed(seconds: float) -> str:
 
 
 class PolySubApp(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        appearance_settings: AppearanceSettings | None = None,
+        appearance_store: AppearanceSettingsStore | None = None,
+        schedule_background_tasks: bool = True,
+    ) -> None:
         super().__init__()
+        self._appearance_store = appearance_store or AppearanceSettingsStore()
+        self.appearance = (
+            appearance_settings or self._appearance_store.load()
+        ).normalized()
+        self.theme: ThemePalette = resolve_theme(self.appearance.theme)
+        self.appearance_interface_var = tk.StringVar(
+            value=INTERFACE_LABELS[self.appearance.interface]
+        )
+        self.appearance_theme_var = tk.StringVar(
+            value=next(
+                theme.label for theme in THEMES if theme.id == self.appearance.theme
+            )
+        )
+        self.appearance_description_var = tk.StringVar()
+        self._appearance_dialog: tk.Toplevel | None = None
+        self._modern_nav_buttons: dict[str, ttk.Button] = {}
+        self._content_sections: dict[str, tk.Widget] = {}
         self.title("PolySub Translator")
         width, height = recommended_window_size(
             self.winfo_screenwidth(),
             self.winfo_screenheight(),
+            target_width=1220 if self.appearance.interface == MODERN_INTERFACE else 1000,
         )
         left = max((self.winfo_screenwidth() - width) // 2, 0)
         top = max((self.winfo_screenheight() - height) // 2, 0)
         self.geometry(f"{width}x{height}+{left}+{top}")
-        self.minsize(min(700, width), min(560, height))
+        minimum_width = 860 if self.appearance.interface == MODERN_INTERFACE else 700
+        self.minsize(min(minimum_width, width), min(560, height))
         self.document: SRTDocument | None = None
         self.source_path: Path | None = None
         self.media_path: Path | None = None
@@ -146,31 +189,252 @@ class PolySubApp(tk.Tk):
         self._timing_controls_locked = False
         self._build_style()
         self._build_ui()
-        self.after(200, self._start_device_detection)
-        self.after(1200, self._start_update_check)
+        self._apply_theme_to_widgets()
+        if schedule_background_tasks:
+            self.after(200, self._start_device_detection)
+            self.after(1200, self._start_update_check)
 
     def _build_style(self) -> None:
         style = ttk.Style(self)
         if "clam" in style.theme_names():
             style.theme_use("clam")
-        style.configure("Title.TLabel", font=("Segoe UI", 22, "bold"))
-        style.configure("Heading.TLabel", font=("Segoe UI", 11, "bold"))
-        style.configure("Primary.TButton", font=("Segoe UI", 11, "bold"), padding=(16, 10))
-        style.configure("Mode.TRadiobutton", font=("Segoe UI", 11, "bold"), padding=8)
+        palette = self.theme
+        self.configure(background=palette.window)
+        style.configure(
+            ".",
+            background=palette.surface,
+            foreground=palette.text,
+            fieldbackground=palette.input,
+            bordercolor=palette.border,
+            lightcolor=palette.border,
+            darkcolor=palette.border,
+            troughcolor=palette.elevated,
+            font=("Segoe UI", 10),
+        )
+        style.configure("TFrame", background=palette.surface)
+        style.configure("Content.TFrame", background=palette.window)
+        style.configure("Hero.TFrame", background=palette.window)
+        style.configure("Sidebar.TFrame", background=palette.panel)
+        style.configure("TLabel", background=palette.surface, foreground=palette.text)
+        style.configure(
+            "Muted.TLabel",
+            background=palette.surface,
+            foreground=palette.muted,
+        )
+        style.configure(
+            "Sidebar.TLabel",
+            background=palette.panel,
+            foreground=palette.text,
+        )
+        style.configure(
+            "SidebarMuted.TLabel",
+            background=palette.panel,
+            foreground=palette.muted,
+        )
+        style.configure(
+            "Title.TLabel",
+            background=palette.surface,
+            foreground=palette.text,
+            font=("Segoe UI", 22, "bold"),
+        )
+        style.configure(
+            "HeroTitle.TLabel",
+            background=palette.window,
+            foreground=palette.text,
+            font=("Segoe UI", 24, "bold"),
+        )
+        style.configure(
+            "HeroMuted.TLabel",
+            background=palette.window,
+            foreground=palette.muted,
+        )
+        style.configure(
+            "Brand.TLabel",
+            background=palette.panel,
+            foreground=palette.text,
+            font=("Segoe UI", 16, "bold"),
+        )
+        style.configure(
+            "Eyebrow.TLabel",
+            background=palette.surface,
+            foreground=palette.accent,
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.configure(
+            "HeroEyebrow.TLabel",
+            background=palette.window,
+            foreground=palette.accent,
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.configure(
+            "Heading.TLabel",
+            background=palette.surface,
+            foreground=palette.text,
+            font=("Segoe UI", 11, "bold"),
+        )
+        style.configure(
+            "TLabelframe",
+            background=palette.surface,
+            bordercolor=palette.border,
+            relief="solid",
+            borderwidth=1,
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=palette.surface,
+            foreground=palette.text,
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.configure(
+            "TButton",
+            background=palette.elevated,
+            foreground=palette.text,
+            bordercolor=palette.border,
+            padding=(11, 7),
+        )
+        style.map(
+            "TButton",
+            background=[("active", palette.selected), ("pressed", palette.selected)],
+            foreground=[("disabled", palette.muted)],
+        )
+        style.configure(
+            "Primary.TButton",
+            background=palette.accent,
+            foreground=palette.accent_text,
+            bordercolor=palette.accent,
+            font=("Segoe UI", 11, "bold"),
+            padding=(16, 11),
+        )
+        style.map(
+            "Primary.TButton",
+            background=[
+                ("active", palette.accent_hover),
+                ("pressed", palette.accent_hover),
+                ("disabled", palette.border),
+            ],
+            foreground=[("disabled", palette.muted)],
+        )
+        style.configure(
+            "Nav.TButton",
+            background=palette.panel,
+            foreground=palette.muted,
+            bordercolor=palette.panel,
+            anchor="w",
+            padding=(14, 10),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "Nav.TButton",
+            background=[("active", palette.elevated), ("pressed", palette.selected)],
+            foreground=[("active", palette.text)],
+        )
+        style.configure(
+            "SelectedNav.TButton",
+            background=palette.selected,
+            foreground=palette.accent_hover,
+            bordercolor=palette.accent,
+            anchor="w",
+            padding=(14, 10),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "SelectedNav.TButton",
+            background=[("active", palette.selected), ("pressed", palette.selected)],
+            foreground=[("active", palette.accent_hover)],
+        )
+        style.configure(
+            "Mode.TRadiobutton",
+            background=palette.surface,
+            foreground=palette.text,
+            font=("Segoe UI", 11, "bold"),
+            padding=8,
+        )
+        style.map(
+            "Mode.TRadiobutton",
+            background=[("active", palette.surface)],
+            foreground=[("active", palette.accent_hover)],
+            indicatorcolor=[("selected", palette.accent)],
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground=palette.input,
+            background=palette.elevated,
+            foreground=palette.text,
+            arrowcolor=palette.text,
+            bordercolor=palette.border,
+            padding=5,
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", palette.input), ("disabled", palette.elevated)],
+            foreground=[("readonly", palette.text), ("disabled", palette.muted)],
+            selectbackground=[("readonly", palette.input)],
+            selectforeground=[("readonly", palette.text)],
+        )
+        for widget_style in ("TEntry", "TSpinbox"):
+            style.configure(
+                widget_style,
+                fieldbackground=palette.input,
+                foreground=palette.text,
+                insertcolor=palette.text,
+                bordercolor=palette.border,
+                padding=5,
+            )
+        style.configure(
+            "Treeview",
+            background=palette.input,
+            fieldbackground=palette.input,
+            foreground=palette.text,
+            bordercolor=palette.border,
+            rowheight=27,
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", palette.accent)],
+            foreground=[("selected", palette.accent_text)],
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=palette.elevated,
+            foreground=palette.text,
+            bordercolor=palette.border,
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.map("Treeview.Heading", background=[("active", palette.selected)])
+        style.configure(
+            "TProgressbar",
+            background=palette.accent,
+            troughcolor=palette.elevated,
+            bordercolor=palette.border,
+        )
+        self.option_add("*TCombobox*Listbox.background", palette.input)
+        self.option_add("*TCombobox*Listbox.foreground", palette.text)
+        self.option_add("*TCombobox*Listbox.selectBackground", palette.accent)
+        self.option_add("*TCombobox*Listbox.selectForeground", palette.accent_text)
 
     def _build_ui(self) -> None:
+        modern = self.appearance.interface == MODERN_INTERFACE
         self.rowconfigure(0, weight=1)
-        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=0)
+        self.rowconfigure(2, weight=0)
+        self.columnconfigure(0, weight=0 if modern else 1)
+        self.columnconfigure(1, weight=1 if modern else 0)
 
-        main_host = ttk.Frame(self)
-        main_host.grid(row=0, column=0, sticky="nsew")
+        self._content_sections = {}
+        self._modern_nav_buttons = {}
+        if modern:
+            self._build_modern_sidebar()
+
+        content_column = 1 if modern else 0
+        self._content_column = content_column
+        main_host = ttk.Frame(self, style="Content.TFrame")
+        main_host.grid(row=0, column=content_column, sticky="nsew")
         main_host.rowconfigure(0, weight=1)
         main_host.columnconfigure(0, weight=1)
 
-        frame_background = ttk.Style(self).lookup("TFrame", "background") or "#f0f0f0"
         self.content_canvas = tk.Canvas(
             main_host,
-            background=frame_background,
+            background=self.theme.window,
             borderwidth=0,
             highlightthickness=0,
         )
@@ -183,7 +447,12 @@ class PolySubApp(tk.Tk):
         self.content_canvas.grid(row=0, column=0, sticky="nsew")
         content_scrollbar.grid(row=0, column=1, sticky="ns")
 
-        container = ttk.Frame(self.content_canvas, padding=(24, 20, 18, 12))
+        container = ttk.Frame(
+            self.content_canvas,
+            style="Content.TFrame",
+            padding=(28 if modern else 24, 24 if modern else 20, 24, 16),
+        )
+        self.content_container = container
         self.content_window = self.content_canvas.create_window(
             (0, 0),
             window=container,
@@ -191,21 +460,38 @@ class PolySubApp(tk.Tk):
         )
         container.bind("<Configure>", self._sync_scroll_region)
         self.content_canvas.bind("<Configure>", self._resize_scroll_content)
-        self.bind("<MouseWheel>", self._scroll_main_content, add="+")
+        self.bind("<MouseWheel>", self._scroll_main_content)
 
-        ttk.Label(container, text="PolySub Translator", style="Title.TLabel").pack(anchor="w")
+        if modern:
+            ttk.Label(container, text="POLYSUB TRANSLATOR", style="HeroEyebrow.TLabel").pack(
+                anchor="w"
+            )
         ttk.Label(
             container,
-            text="Wykrywa język, tłumaczy napisy i pilnuje ich czytelnej synchronizacji.",
+            text="PolySub Translator",
+            style="HeroTitle.TLabel" if modern else "Title.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            container,
+            text=(
+                "Nowoczesne centrum tłumaczenia filmów i napisów."
+                if modern
+                else "Wykrywa język, tłumaczy napisy i pilnuje ich czytelnej synchronizacji."
+            ),
+            style="HeroMuted.TLabel" if modern else "TLabel",
         ).pack(anchor="w", pady=(2, 5))
 
-        version_frame = ttk.Frame(container)
+        version_frame = ttk.Frame(container, style="Hero.TFrame" if modern else "TFrame")
         version_frame.pack(fill="x", pady=(0, 16))
         version_frame.columnconfigure(0, weight=1)
         self.version_status_var = tk.StringVar(
             value=f"Wersja {__version__} • automatyczne sprawdzanie aktualizacji"
         )
-        ttk.Label(version_frame, textvariable=self.version_status_var).grid(
+        ttk.Label(
+            version_frame,
+            textvariable=self.version_status_var,
+            style="HeroMuted.TLabel" if modern else "TLabel",
+        ).grid(
             row=0,
             column=0,
             sticky="w",
@@ -223,9 +509,16 @@ class PolySubApp(tk.Tk):
             command=self._start_update_check,
         )
         self.check_update_button.grid(row=0, column=2, sticky="e")
+        self.appearance_button = ttk.Button(
+            version_frame,
+            text="Wygląd…",
+            command=self._open_appearance_dialog,
+        )
+        self.appearance_button.grid(row=0, column=3, sticky="e", padx=(6, 0))
 
         file_frame = ttk.LabelFrame(container, text="1. Napisy lub film", padding=14)
         file_frame.pack(fill="x")
+        self._content_sections["start"] = file_frame
         file_frame.columnconfigure(0, weight=1)
         self.file_var = tk.StringVar(value="Nie wybrano pliku")
         ttk.Label(file_frame, textvariable=self.file_var, wraplength=650).grid(
@@ -250,6 +543,7 @@ class PolySubApp(tk.Tk):
 
         language_frame = ttk.LabelFrame(container, text="2. Języki", padding=14)
         language_frame.pack(fill="x", pady=12)
+        self._content_sections["translation"] = language_frame
         language_frame.columnconfigure(1, weight=1)
         language_frame.columnconfigure(3, weight=1)
         ttk.Label(language_frame, text="Wykryty język:").grid(row=0, column=0, sticky="w")
@@ -286,6 +580,7 @@ class PolySubApp(tk.Tk):
 
         engine_frame = ttk.LabelFrame(settings, text="3. Silnik", padding=14)
         engine_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        self._content_sections["models"] = engine_frame
         self.engine_var = tk.StringVar(value=LOCAL_ENGINE_LABEL)
         self.engine_combo = ttk.Combobox(
             engine_frame,
@@ -364,6 +659,7 @@ class PolySubApp(tk.Tk):
             padding=12,
         )
         compute_frame.pack(fill="x", pady=(12, 0))
+        self._content_sections["film"] = compute_frame
         compute_frame.columnconfigure(0, weight=1)
         self.device_var = tk.StringVar(value="Automatycznie — wykrywanie sprzętu…")
         self.device_combo = ttk.Combobox(
@@ -578,9 +874,435 @@ class PolySubApp(tk.Tk):
         )
         self.context_text.pack(fill="both", expand=True, pady=(6, 0))
 
+        if modern:
+            appearance_frame = self._build_appearance_panel(container)
+            appearance_frame.pack(fill="x", pady=(0, 12))
+            self._content_sections["settings"] = appearance_frame
+
         self._build_activity_panel()
         self._build_action_bar()
         self._update_api_state()
+        if modern:
+            self.after_idle(lambda: self._set_modern_nav_selection("start"))
+
+    def _build_modern_sidebar(self) -> None:
+        sidebar = ttk.Frame(
+            self,
+            style="Sidebar.TFrame",
+            width=224,
+            padding=(18, 22, 18, 18),
+        )
+        sidebar.grid(row=0, column=0, rowspan=3, sticky="nsew")
+        sidebar.grid_propagate(False)
+
+        ttk.Label(sidebar, text="PS", style="Brand.TLabel").pack(anchor="w")
+        ttk.Label(
+            sidebar,
+            text="PolySub Translator",
+            style="Brand.TLabel",
+        ).pack(anchor="w", pady=(2, 0))
+        ttk.Label(
+            sidebar,
+            text=f"Wersja {__version__}",
+            style="SidebarMuted.TLabel",
+        ).pack(anchor="w", pady=(2, 24))
+
+        navigation = (
+            ("start", "⌂  Start"),
+            ("translation", "✦  Tłumaczenie"),
+            ("models", "◫  Modele AI"),
+            ("film", "▶  Film i sprzęt"),
+            ("settings", "⚙  Ustawienia"),
+        )
+        for key, label in navigation:
+            button = ttk.Button(
+                sidebar,
+                text=label,
+                style="Nav.TButton",
+                command=lambda section=key: self._scroll_to_section(section),
+            )
+            button.pack(fill="x", pady=2)
+            self._modern_nav_buttons[key] = button
+
+        ttk.Frame(sidebar, style="Sidebar.TFrame").pack(fill="both", expand=True)
+        ttk.Label(
+            sidebar,
+            text="SZYBKI MOTYW",
+            style="SidebarMuted.TLabel",
+            font=("Segoe UI", 8, "bold"),
+        ).pack(anchor="w", pady=(0, 6))
+        quick_theme = ttk.Combobox(
+            sidebar,
+            textvariable=self.appearance_theme_var,
+            values=[theme.label for theme in THEMES],
+            state="readonly",
+            width=23,
+        )
+        quick_theme.pack(fill="x")
+        quick_theme.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._theme_selection_changed(),
+        )
+
+    def _build_appearance_panel(self, parent: tk.Misc) -> ttk.LabelFrame:
+        frame = ttk.LabelFrame(parent, text="9. Wygląd aplikacji", padding=14)
+        frame.columnconfigure(1, weight=1)
+        ttk.Label(frame, text="Interfejs:").grid(row=0, column=0, sticky="w")
+        self.appearance_interface_combo = ttk.Combobox(
+            frame,
+            textvariable=self.appearance_interface_var,
+            values=list(INTERFACE_IDS_BY_LABEL),
+            state="readonly",
+        )
+        self.appearance_interface_combo.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(10, 0),
+        )
+        ttk.Label(frame, text="Motyw:").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.appearance_theme_combo = ttk.Combobox(
+            frame,
+            textvariable=self.appearance_theme_var,
+            values=[theme.label for theme in THEMES],
+            state="readonly",
+        )
+        self.appearance_theme_combo.grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(10, 0),
+            pady=(10, 0),
+        )
+        self.appearance_theme_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._theme_selection_changed(),
+        )
+        ttk.Label(
+            frame,
+            textvariable=self.appearance_description_var,
+            style="Muted.TLabel",
+            wraplength=780,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        actions = ttk.Frame(frame)
+        actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        ttk.Button(
+            actions,
+            text="Zastosuj wybrany interfejs",
+            command=self._apply_interface_selection,
+            style="Primary.TButton",
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Przywróć wygląd domyślny",
+            command=self._reset_appearance,
+        ).pack(side="left", padx=(8, 0))
+        self._update_appearance_description()
+        return frame
+
+    def _scroll_to_section(self, section: str) -> None:
+        target = self._content_sections.get(section)
+        if target is None:
+            return
+        self.update_idletasks()
+        canvas_bounds = self.content_canvas.bbox("all")
+        if not canvas_bounds:
+            return
+        content_height = max(canvas_bounds[3] - canvas_bounds[1], 1)
+        viewport = max(self.content_canvas.winfo_height(), 1)
+        relative_y = max(
+            target.winfo_rooty() - self.content_container.winfo_rooty() - 8,
+            0,
+        )
+        maximum_y = max(content_height - viewport, 0)
+        self.content_canvas.yview_moveto(min(relative_y, maximum_y) / content_height)
+        self._set_modern_nav_selection(section)
+
+    def _set_modern_nav_selection(self, section: str) -> None:
+        for key, button in self._modern_nav_buttons.items():
+            button.configure(
+                style="SelectedNav.TButton" if key == section else "Nav.TButton"
+            )
+
+    def _selected_theme_id(self) -> str:
+        return THEME_IDS_BY_LABEL.get(self.appearance_theme_var.get(), DEFAULT_THEME)
+
+    def _selected_interface_id(self) -> str:
+        return INTERFACE_IDS_BY_LABEL.get(
+            self.appearance_interface_var.get(),
+            DEFAULT_INTERFACE,
+        )
+
+    def _update_appearance_description(self) -> None:
+        theme_id = self._selected_theme_id()
+        theme = next((item for item in THEMES if item.id == theme_id), THEMES[0])
+        interface = INTERFACE_LABELS[self._selected_interface_id()]
+        self.appearance_description_var.set(
+            f"{interface} • {theme.label}. {theme.description} Ustawienie zostanie zapamiętane."
+        )
+
+    def _theme_selection_changed(self) -> None:
+        self._apply_appearance(
+            self.appearance.interface,
+            self._selected_theme_id(),
+        )
+
+    def _apply_interface_selection(self) -> None:
+        self._apply_appearance(
+            self._selected_interface_id(),
+            self._selected_theme_id(),
+        )
+
+    def _reset_appearance(self) -> None:
+        self.appearance_interface_var.set(INTERFACE_LABELS[MODERN_INTERFACE])
+        default_label = next(theme.label for theme in THEMES if theme.id == DEFAULT_THEME)
+        self.appearance_theme_var.set(default_label)
+        self._apply_appearance(MODERN_INTERFACE, DEFAULT_THEME)
+
+    def _apply_appearance(self, interface: str, theme_id: str) -> None:
+        requested = AppearanceSettings(interface=interface, theme=theme_id).normalized()
+        interface_changed = requested.interface != self.appearance.interface
+        if interface_changed and self._activity_active:
+            self.appearance_interface_var.set(INTERFACE_LABELS[self.appearance.interface])
+            messagebox.showwarning(
+                "Operacja jest w toku",
+                "Interfejs możesz przełączyć po zakończeniu bieżącej operacji. Motyw nadal "
+                "można zmienić od razu.",
+                parent=self,
+            )
+            requested = AppearanceSettings(
+                interface=self.appearance.interface,
+                theme=requested.theme,
+            )
+            interface_changed = False
+
+        self.appearance = requested
+        self.theme = resolve_theme(requested.theme)
+        self.appearance_interface_var.set(INTERFACE_LABELS[requested.interface])
+        self.appearance_theme_var.set(
+            next(theme.label for theme in THEMES if theme.id == requested.theme)
+        )
+        try:
+            self._appearance_store.save(requested)
+        except OSError:
+            self.status_var.set("Nie udało się zapisać ustawień wyglądu.")
+
+        if interface_changed:
+            self._rebuild_interface()
+        else:
+            self._build_style()
+            self._apply_theme_to_widgets()
+            self._update_appearance_description()
+
+    def _open_appearance_dialog(self) -> None:
+        if self._appearance_dialog is not None:
+            try:
+                if self._appearance_dialog.winfo_exists():
+                    self._appearance_dialog.lift()
+                    self._appearance_dialog.focus_force()
+                    return
+            except tk.TclError:
+                self._appearance_dialog = None
+
+        dialog = tk.Toplevel(self)
+        self._appearance_dialog = dialog
+        dialog.title("Wygląd aplikacji — PolySub")
+        dialog.geometry("560x330")
+        dialog.minsize(500, 300)
+        dialog.transient(self)
+        dialog.columnconfigure(0, weight=1)
+        container = ttk.Frame(dialog, padding=20)
+        container.grid(row=0, column=0, sticky="nsew")
+        container.columnconfigure(1, weight=1)
+        ttk.Label(container, text="Interfejs i motyw", style="Title.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 14)
+        )
+        interface_var = tk.StringVar(value=self.appearance_interface_var.get())
+        theme_var = tk.StringVar(value=self.appearance_theme_var.get())
+        description_var = tk.StringVar()
+
+        ttk.Label(container, text="Interfejs:").grid(row=1, column=0, sticky="w")
+        ttk.Combobox(
+            container,
+            textvariable=interface_var,
+            values=list(INTERFACE_IDS_BY_LABEL),
+            state="readonly",
+        ).grid(row=1, column=1, sticky="ew", padx=(12, 0))
+        ttk.Label(container, text="Motyw:").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        theme_combo = ttk.Combobox(
+            container,
+            textvariable=theme_var,
+            values=[theme.label for theme in THEMES],
+            state="readonly",
+        )
+        theme_combo.grid(row=2, column=1, sticky="ew", padx=(12, 0), pady=(12, 0))
+
+        def update_description(_event=None) -> None:
+            selected_id = THEME_IDS_BY_LABEL.get(theme_var.get(), DEFAULT_THEME)
+            selected_theme = next(
+                (theme for theme in THEMES if theme.id == selected_id),
+                THEMES[0],
+            )
+            description_var.set(selected_theme.description)
+
+        theme_combo.bind("<<ComboboxSelected>>", update_description)
+        update_description()
+        ttk.Label(
+            container,
+            textvariable=description_var,
+            style="Muted.TLabel",
+            wraplength=500,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(12, 20))
+
+        actions = ttk.Frame(container)
+        actions.grid(row=4, column=0, columnspan=2, sticky="e")
+
+        def apply_selection() -> None:
+            self._apply_appearance(
+                INTERFACE_IDS_BY_LABEL.get(interface_var.get(), DEFAULT_INTERFACE),
+                THEME_IDS_BY_LABEL.get(theme_var.get(), DEFAULT_THEME),
+            )
+            try:
+                dialog.destroy()
+            except tk.TclError:
+                pass
+            self._appearance_dialog = None
+
+        ttk.Button(actions, text="Anuluj", command=dialog.destroy).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Zastosuj",
+            command=apply_selection,
+            style="Primary.TButton",
+        ).pack(side="left", padx=(8, 0))
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        self._apply_theme_to_widgets(dialog)
+
+    def _capture_interface_state(self) -> dict[str, object]:
+        variable_names = (
+            "file_var",
+            "speech_model_var",
+            "source_var",
+            "target_var",
+            "detected_var",
+            "engine_var",
+            "model_var",
+            "api_key_var",
+            "mode_var",
+            "cpu_usage_var",
+            "timing_var",
+            "minimum_duration_var",
+            "max_cps_var",
+            "version_status_var",
+            "stage_text",
+            "elapsed_text",
+            "progress_text",
+            "status_var",
+        )
+        values = {
+            name: getattr(self, name).get()
+            for name in variable_names
+            if hasattr(self, name)
+        }
+        context = self.context_text.get("1.0", "end-1c") if hasattr(self, "context_text") else ""
+        log = self.activity_log.get("1.0", "end-1c") if hasattr(self, "activity_log") else ""
+        return {"variables": values, "context": context, "log": log}
+
+    def _rebuild_interface(self) -> None:
+        state = self._capture_interface_state()
+        if self._model_manager_window is not None:
+            try:
+                self._model_manager_window.destroy()
+            except tk.TclError:
+                pass
+            self._model_manager_window = None
+        for child in self.winfo_children():
+            try:
+                child.destroy()
+            except tk.TclError:
+                pass
+        self._appearance_dialog = None
+        self._build_style()
+        self._build_ui()
+        self._restore_interface_state(state)
+        self._apply_theme_to_widgets()
+
+    def _restore_interface_state(self, state: dict[str, object]) -> None:
+        values = state.get("variables", {})
+        if isinstance(values, dict):
+            for name, value in values.items():
+                variable = getattr(self, name, None)
+                if isinstance(variable, tk.Variable):
+                    variable.set(value)
+        context = state.get("context")
+        if isinstance(context, str) and context:
+            self.context_text.insert("1.0", context)
+        log = state.get("log")
+        if isinstance(log, str) and log:
+            self.activity_log.configure(state="normal")
+            self.activity_log.insert("1.0", log)
+            self.activity_log.configure(state="disabled")
+
+        self._update_api_state()
+        self._update_cpu_usage_description()
+        self._update_timing_description()
+        self._refresh_model_status()
+        self._restore_device_widgets()
+        self._update_attach_button()
+        if self._update_download_url:
+            self.download_update_button.grid()
+        self._update_appearance_description()
+
+    def _restore_device_widgets(self) -> None:
+        self._device_label_to_id = {AUTO_DEVICE_LABEL: AUTO_DEVICE_ID}
+        self._device_label_to_id.update(
+            {device.display_label: device.id for device in self._compute_devices}
+        )
+        self.device_combo.configure(values=list(self._device_label_to_id))
+        selected = next(
+            (
+                label
+                for label, device_id in self._device_label_to_id.items()
+                if device_id == self._selected_device_id
+            ),
+            AUTO_DEVICE_LABEL,
+        )
+        self.device_var.set(selected)
+        self._selected_device_id = self._device_label_to_id[selected]
+        self._update_device_description()
+
+    def _apply_theme_to_widgets(self, root: tk.Misc | None = None) -> None:
+        palette = self.theme
+        root = root or self
+        try:
+            if isinstance(root, (tk.Tk, tk.Toplevel)):
+                root.configure(background=palette.window)
+            elif isinstance(root, tk.Canvas):
+                root.configure(background=palette.window)
+            elif isinstance(root, tk.Text):
+                root.configure(
+                    background=palette.input,
+                    foreground=palette.text,
+                    insertbackground=palette.text,
+                    selectbackground=palette.accent,
+                    selectforeground=palette.accent_text,
+                    highlightbackground=palette.border,
+                    highlightcolor=palette.accent,
+                    relief="flat",
+                )
+            elif isinstance(root, ttk.Treeview):
+                root.tag_configure(
+                    "flagged",
+                    background=palette.warning,
+                    foreground=palette.warning_text,
+                )
+            for child in root.winfo_children():
+                self._apply_theme_to_widgets(child)
+        except tk.TclError:
+            return
+
+        if root is self and hasattr(self, "timing_profile_buttons"):
+            self._update_timing_description()
 
     def _selected_model(self) -> TranslationModelSpec:
         model_id = MODEL_LABEL_TO_ID.get(self.model_var.get(), DEFAULT_MODEL_ID)
@@ -625,6 +1347,7 @@ class PolySubApp(tk.Tk):
             on_use=self._select_model,
             on_close=self._model_manager_closed,
         )
+        self._apply_theme_to_widgets(self._model_manager_window)
 
     def _select_model(self, model_id: str) -> None:
         self.model_var.set(MODEL_ID_TO_LABEL.get(model_id, MODEL_ID_TO_LABEL[DEFAULT_MODEL_ID]))
@@ -778,17 +1501,18 @@ class PolySubApp(tk.Tk):
         self._update_timing_description()
 
     def _update_timing_card_styles(self, selected_mode: SubtitleTimingMode) -> None:
+        palette = self.theme
         for mode, button in self.timing_profile_buttons.items():
             selected = mode is selected_mode
             button.configure(
-                background="#eaf3ff" if selected else "#ffffff",
-                foreground="#0b57d0" if selected else "#263746",
-                activebackground="#dbeaff" if selected else "#f3f7fb",
-                activeforeground="#0b57d0",
-                highlightbackground="#2f80ed" if selected else "#c9d5e2",
-                highlightcolor="#2f80ed" if selected else "#c9d5e2",
+                background=palette.selected if selected else palette.panel,
+                foreground=palette.accent_hover if selected else palette.text,
+                activebackground=palette.selected if selected else palette.elevated,
+                activeforeground=palette.accent_hover,
+                highlightbackground=palette.accent if selected else palette.border,
+                highlightcolor=palette.accent if selected else palette.border,
                 highlightthickness=2 if selected else 1,
-                disabledforeground="#6f7d8a" if selected else "#9aa4ad",
+                disabledforeground=palette.muted,
                 relief="flat",
             )
 
@@ -809,9 +1533,9 @@ class PolySubApp(tk.Tk):
                 "Ochrona przed zbyt krótkimi lub nachodzącymi napisami będzie wyłączona."
             )
             self.timing_status_label.configure(
-                background="#fff7e6",
-                foreground="#714600",
-                highlightbackground="#e7c66f",
+                background=self.theme.warning,
+                foreground=self.theme.warning_text,
+                highlightbackground=self.theme.warning_text,
             )
             return
         if mode is SubtitleTimingMode.DYNAMIC:
@@ -829,9 +1553,9 @@ class PolySubApp(tk.Tk):
                     "Początek każdej nowej wypowiedzi nadal pozostanie chroniony."
                 )
                 self.timing_status_label.configure(
-                    background="#fff0f0",
-                    foreground="#8a2731",
-                    highlightbackground="#e5a6ac",
+                    background=self.theme.panel,
+                    foreground=self.theme.danger,
+                    highlightbackground=self.theme.danger,
                 )
                 return
             heading = "⚙ WŁASNE • Twoje tempo czytania"
@@ -847,9 +1571,9 @@ class PolySubApp(tk.Tk):
             "✓ Start dialogu pozostaje bez zmian, a stary napis nie wejdzie na nową wypowiedź."
         )
         self.timing_status_label.configure(
-            background="#eaf3ff",
-            foreground="#174a7e",
-            highlightbackground="#bdd7f2",
+            background=self.theme.selected,
+            foreground=self.theme.text,
+            highlightbackground=self.theme.accent,
         )
 
     def _selected_timing_settings(self) -> SubtitleTimingSettings:
@@ -930,7 +1654,7 @@ class PolySubApp(tk.Tk):
 
     def _build_action_bar(self) -> None:
         action_frame = ttk.Frame(self, padding=(24, 10, 24, 16))
-        action_frame.grid(row=2, column=0, sticky="ew")
+        action_frame.grid(row=2, column=self._content_column, sticky="ew")
         action_frame.columnconfigure(0, weight=1)
         action_frame.columnconfigure(1, weight=1)
         self.attach_button = ttk.Button(
@@ -963,7 +1687,13 @@ class PolySubApp(tk.Tk):
 
     def _build_activity_panel(self) -> None:
         activity = ttk.LabelFrame(self, text="Postęp operacji", padding=(18, 10))
-        activity.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 0))
+        activity.grid(
+            row=1,
+            column=self._content_column,
+            sticky="ew",
+            padx=18,
+            pady=(8, 0),
+        )
         activity.columnconfigure(0, weight=1)
 
         stage_header = ttk.Frame(activity)
@@ -1599,7 +2329,7 @@ class PolySubApp(tk.Tk):
             )
             self._show_stage(6, finished_message, determinate=True)
             self._finish_activity(finished_message)
-            ReviewWindow(
+            review_window = ReviewWindow(
                 self,
                 self.document,
                 result.document,
@@ -1612,6 +2342,7 @@ class PolySubApp(tk.Tk):
                     saved_path, target_language
                 ),
             )
+            self._apply_theme_to_widgets(review_window)
             return
         self._translated_subtitle_ready(output, target_language)
         finished_message = f"Gotowe: {output.name}"
