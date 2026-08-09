@@ -1,6 +1,6 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.4.9 • autor: fgSousace • użytek niekomercyjny**
+**Wersja 0.5.0 • autor: fgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
@@ -74,16 +74,19 @@ model nie może zostać przypadkowo uruchomiony.
 - **NVIDIA:** instalator zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9. Jest to
   wariant dla kart GTX 10 oraz RTX 20/30/40/50 z aktualnym sterownikiem.
 - **AMD Radeon:** Windows wymaga osobnego, niezgodnego z CUDA wariantu PyTorch.
-  Kliknij **Skonfiguruj / sprawdź AMD**. Program utworzy odizolowane środowisko
-  Python 3.12, pobierze oficjalne AMD ROCm 7.2.1 i wykona prawdziwy test GPU.
+  Niczego nie trzeba klikać ani instalować ręcznie. Po wykryciu zgodnej karty
+  program sam pobiera własne środowisko Python i właściwy pakiet AMD ROCm 7.14,
+  po czym wykonuje prawdziwe obliczenie testowe na GPU. W czasie przygotowania
+  można korzystać z bezpiecznej drogi CPU.
 - **CPU Intel/AMD:** zawsze dostępna droga awaryjna. Ustawienie 100% przekazuje
   modelowi wszystkie logiczne wątki, ale nie obniża jakości.
 
-Oficjalna obsługa AMD ROCm 7.2.1 na Windows obejmuje obecnie: RX 9070, RX 9070
-XT, AI PRO R9700, RX 9060 XT, RX 7900 XTX, PRO W7900, PRO W7900 Dual Slot oraz
-RX 7700. Wymagane są Windows 11, Python 3.12 i sterownik Adrenalin 26.2.2.
-Starszy lub niewymieniony Radeon nadal działa przez CPU; sama nazwa karty nie
-jest traktowana jako dowód gotowej akceleracji.
+RX 9070 XT jest rozpoznawany jako `gfx1201`. Automat rozróżnia też oficjalne
+cele AMD dla RX 9000, RX 7000, wybranych RDNA2, Radeon PRO oraz obsługiwanych
+układów Ryzen. ROCm 7.14 wymaga obecnie Windows 11 25H2 i sterownika Adrenalin
+26.6.4 lub nowszego; PolySub nie zmienia sterownika systemowego. Starszy lub
+niewymieniony Radeon nadal działa przez CPU. Sama nazwa karty nie jest traktowana
+jako dowód gotowej akceleracji — karta pojawia się jako gotowa dopiero po teście GPU.
 
 ## 8. Gotowy film
 
@@ -100,8 +103,9 @@ Po przetłumaczeniu napisów filmu możesz wybrać:
   menedżer i wybierz **Wznów/Pobierz**.
 - **GPU jest na liście, ale program wybiera CPU:** karta została wykryta fizycznie,
   lecz backend albo sterownik nie przeszedł testu. Opis pod listą podaje powód.
-- **RX 9070 XT używa CPU:** uruchom konfigurator AMD i upewnij się, że masz
-  Windows 11, Python 3.12 oraz wskazany sterownik AMD.
+- **RX 9070 XT używa CPU:** zostaw program uruchomiony do zakończenia automatycznego
+  pobierania. Jeżeli test GPU nadal nie przechodzi, zaktualizuj Windows 11 do 25H2
+  i sterownik AMD; własny Python nie jest wymagany.
 - **Napisy zniknęły w VLC:** włącz ścieżkę w menu **Napisy** albo użyj
   opcji trwałego wypalenia.
 - **Przycisk tłumaczenia nie startuje:** wybierz plik, gotowy model/język i zaznacz

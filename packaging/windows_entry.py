@@ -72,17 +72,22 @@ def main() -> None:
 
     if "--self-test-amd-runtime" in sys.argv:
         from polysub.amd_runtime import (
-            OFFICIALLY_SUPPORTED_WINDOWS_GPUS,
-            ROCM_SDK_URLS,
-            ROCM_TORCH_URLS,
+            EMBEDDED_PYTHON_URL,
+            ROCM_INDEX_URL,
+            ROCM_VERSION,
             amd_worker_script,
+            select_amd_runtime_plan,
         )
 
-        if "Radeon RX 9070 XT" not in OFFICIALLY_SUPPORTED_WINDOWS_GPUS:
-            raise RuntimeError("Lista AMD ROCm nie zawiera Radeona RX 9070 XT.")
-        urls = (*ROCM_SDK_URLS, *ROCM_TORCH_URLS)
-        if not all("repo.radeon.com" in url and "7.2.1" in url for url in urls):
-            raise RuntimeError("Konfigurator AMD nie wskazuje oficjalnych paczek ROCm 7.2.1.")
+        plan = select_amd_runtime_plan(("AMD Radeon RX 9070 XT",))
+        if plan is None or plan.target != "gfx1201":
+            raise RuntimeError("Automat AMD nie dobrał gfx1201 dla Radeona RX 9070 XT.")
+        if ROCM_VERSION != "7.14.0" or "repo.amd.com" not in ROCM_INDEX_URL:
+            raise RuntimeError("Automat AMD nie wskazuje oficjalnego ROCm 7.14.0.")
+        if "python.org" not in EMBEDDED_PYTHON_URL:
+            raise RuntimeError("Automat AMD nie zawiera własnego oficjalnego środowiska Python.")
+        if "[device-gfx1201]" not in plan.torch_requirement:
+            raise RuntimeError("PyTorch AMD nie został ograniczony do architektury RX 9070 XT.")
         worker = amd_worker_script()
         if not worker.is_file():
             raise RuntimeError(f"W pakiecie brakuje workera AMD: {worker}")
@@ -311,7 +316,7 @@ def main() -> None:
                     app.model_manager_button,
                     app.automatic_mode_checkbox,
                     app.review_mode_checkbox,
-                    app.amd_runtime_button,
+                    app.amd_runtime_status_label,
                     app.burn_button,
                     app.about_button,
                     app.appearance_interface_combo,
@@ -319,6 +324,10 @@ def main() -> None:
                 )
                 if any(not widget.winfo_manager() for widget in required_widgets):
                     raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
+                if hasattr(app, "amd_runtime_button"):
+                    raise RuntimeError("GUI nadal zawiera ręczny przycisk konfiguracji AMD.")
+                if "automaty" not in app.amd_runtime_status_var.get().casefold():
+                    raise RuntimeError("GUI nie opisuje automatycznego przygotowania AMD.")
                 _record_self_test_trace("GUI: wymagane kontrolki są rozmieszczone")
                 if app.start_button.winfo_manager() != "grid":
                     raise RuntimeError("Przycisk rozpoczęcia nie jest przypięty do dolnego paska.")

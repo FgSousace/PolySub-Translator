@@ -1,4 +1,4 @@
-POLYSUB TRANSLATOR™ 0.4.9 — INSTALACJA NA WINDOWS
+POLYSUB TRANSLATOR™ 0.5.0 — INSTALACJA NA WINDOWS
 ==========================================
 
 Autor: fgSousace
@@ -79,11 +79,11 @@ RTX 20/30/40/50, w tym RTX 2080. Wymagany jest aktualny sterownik NVIDIA.
 Bez zgodnego sterownika program bezpiecznie wykona zadanie na CPU.
 
 Radeon RX 9070 XT i inne oficjalnie wspierane karty AMD wymagają osobnego
-wariantu PyTorch. Przycisk „Skonfiguruj / sprawdź AMD” tworzy odizolowane
-środowisko ROCm 7.2.1 i testuje prawdziwe obliczenia GPU. Wymagane są Windows 11,
-64-bitowy Python 3.12 i sterownik AMD Adrenalin 26.2.2. Oficjalna lista AMD dla
-Windows obejmuje RX 9070/9070 XT, AI PRO R9700, RX 9060 XT, RX 7900 XTX,
-PRO W7900/W7900 Dual Slot oraz RX 7700. Inne Radeony pozostają na bezpiecznym CPU.
+wariantu PyTorch. Program wykrywa kartę sam, dobiera pakiet (RX 9070 XT: gfx1201),
+pobiera własne odizolowane środowisko Python i oficjalne ROCm 7.14, a następnie
+testuje prawdziwe obliczenia GPU. Nie ma osobnego przycisku i nie trzeba instalować
+Pythona. ROCm wymaga obecnie Windows 11 25H2 oraz sterownika AMD Adrenalin 26.6.4
+lub nowszego. Karty bez oficjalnego pakietu pozostają na bezpiecznym CPU.
 
 Pełna instrukcja po instalacji: INSTRUKCJA_OBSLUGI.md
 

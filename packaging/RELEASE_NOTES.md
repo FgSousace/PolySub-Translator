@@ -1,4 +1,24 @@
-## Nowości w wersji 0.4.9
+## Nowości w wersji 0.5.0
+
+- obsługa AMD na Windows uruchamia się teraz **automatycznie** po wykryciu zgodnego Radeona;
+  usunięto osobny przycisk konfiguracji i pytanie o ręczne rozpoczęcie pobierania;
+- środowisko AMD zostało zaktualizowane z ROCm 7.2.1 do oficjalnego **ROCm 7.14.0** oraz
+  PyTorch 2.12.0 z repozytorium AMD;
+- RX 9070 XT jest rozpoznawany jako architektura **gfx1201** i otrzymuje mniejszy, właściwy
+  pakiet zamiast uniwersalnego zestawu dla wszystkich kart;
+- program pobiera własną, odizolowaną dystrybucję Python 3.12 z python.org, więc użytkownik
+  nie musi instalować Pythona ani zmieniać systemowego środowiska;
+- automat rozróżnia oficjalne cele AMD dla RX 9000, RX 7000, wybranych RDNA2, Radeon PRO
+  i Radeonów w układach Ryzen; przy kilku różnych kartach dobiera pakiet wieloarchitekturowy;
+- karta zostaje oznaczona jako gotowa dopiero po rzeczywistym mnożeniu macierzy na GPU;
+  brak pakietu, internetu, zgodnego Windows lub sterownika powoduje jawny powrót na CPU;
+- przerwane przygotowanie środowiska AMD jest naprawiane automatycznie przy następnym
+  uruchomieniu albo po użyciu przycisku **Odśwież listę sprzętu**;
+- wydanie zawiera `Setup.exe` i ZIP z instalatorem. Nowa paczka portable nie jest tworzona.
+
+Wersje 0.4.9, 0.4.8, 0.4.7, 0.4.6, 0.4.5 i 0.4.4 pozostają osobno w historii GitHub Releases.
+
+## Wcześniej dodane w wersji 0.4.9
 
 - główny przycisk prowadzi najpierw do **Wyszukaj napisy w filmie lub wybierz plik**, a po
   prawidłowym wczytaniu zmienia się w **Rozpocznij tłumaczenie**;
@@ -146,6 +166,6 @@ Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 Windows SmartScreen może wyświetlić ostrzeżenie, ponieważ instalator nie ma jeszcze płatnego
 certyfikatu podpisu cyfrowego. W takim przypadku wybierz **Więcej informacji → Uruchom mimo to**.
 
-Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.4.9 nie zawierają nowej
+Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.5.0 nie zawierają nowej
 paczki portable, ponieważ dołączone biblioteki CUDA przekroczyłyby limit pojedynczego pliku GitHub
 Releases. Portable z wersji 0.4.5 nadal pozostaje dostępne w historii wydań.

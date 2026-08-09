@@ -35,10 +35,11 @@ class RocmWorkerEngine(TranslationEngine):
         if not python_path.is_file() or not worker.is_file() or not pythonpath.is_dir():
             raise TranslationEngineError(
                 "Brakuje kompletnego środowiska AMD ROCm albo pliku workera. "
-                "Uruchom ponownie konfigurację AMD w aplikacji."
+                "Uruchom ponownie aplikację; PolySub przygotuje je automatycznie."
             )
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(pythonpath)
+        environment.setdefault("TORCH_BLAS_PREFER_HIPBLASLT", "1")
         try:
             self._process = subprocess.Popen(
                 [str(python_path), "-u", str(worker)],

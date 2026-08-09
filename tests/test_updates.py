@@ -78,6 +78,31 @@ def test_version_045_detects_published_049_release() -> None:
     assert result.latest_version == "0.4.9"
 
 
+def test_version_049_detects_published_050_release() -> None:
+    installer = (
+        "https://github.com/FgSousace/PolySub-Translator/"
+        "releases/download/v0.5.0/PolySub-Translator-Setup.exe"
+    )
+    session = FakeSession(
+        {
+            "tag_name": "v0.5.0",
+            "html_url": "https://github.com/FgSousace/PolySub-Translator/releases/tag/v0.5.0",
+            "assets": [
+                {
+                    "name": "PolySub-Translator-Setup.exe",
+                    "browser_download_url": installer,
+                }
+            ],
+        }
+    )
+
+    result = check_for_updates("0.4.9", session=session)
+
+    assert result.update_available
+    assert result.latest_version == "0.5.0"
+    assert result.installer_url == installer
+
+
 def test_untrusted_download_url_falls_back_to_release_page() -> None:
     session = FakeSession(
         {

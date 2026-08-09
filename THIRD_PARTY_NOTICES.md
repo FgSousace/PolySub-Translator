@@ -22,6 +22,8 @@ components:
   https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html
 - **AMD ROCm runtime libraries** — optionally downloaded from AMD into an isolated environment;
   AMD ROCm licenses — https://rocm.docs.amd.com/en/latest/about/license.html
+- **CPython embedded distribution** — automatically downloaded from python.org only for the
+  isolated AMD worker; Python Software Foundation License — https://docs.python.org/3/license.html
 - **libass** (used by FFmpeg for permanent subtitle rendering when present in the bundled build)
   — ISC License — https://github.com/libass/libass
 

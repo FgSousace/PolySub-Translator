@@ -10,8 +10,8 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.9-alpha` — anulowanie z bezpiecznym wznowieniem, tylko gotowe modele w GUI,
-> konfigurator AMD ROCm, CUDA 12.8 i dopracowany wybór plików.
+> Status: `v0.5.0-alpha` — automatyczny AMD ROCm 7.14 dla zgodnych Radeonów, anulowanie
+> z bezpiecznym wznowieniem, tylko gotowe modele w GUI i CUDA 12.8 dla NVIDIA.
 
 ## Najważniejsze funkcje
 
@@ -26,6 +26,7 @@ niejasnych fragmentów.
 - lokalne silniki MADLAD-400, NLLB-200, M2M100, mBART-50 i OPUS albo DeepL API;
 - dynamiczna lista rzeczywiście wykrytych procesorów i kart NVIDIA, AMD oraz Intel;
 - tryb Auto wybierający najlepszy zgodny backend z bezpiecznym powrotem na CPU;
+- automatyczne pobieranie właściwego środowiska ROCm dla zgodnego Radeona bez osobnego przycisku;
 - wybór limitu 25%, 50%, 75% albo 100% logicznych wątków procesora;
 - dwa paski postępu: wszystkie etapy operacji oraz dokładny postęp bieżącego etapu;
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
@@ -147,13 +148,16 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-Instalator v0.4.9 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+Instalator v0.5.0 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
 RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
-PyTorch, dlatego przycisk **Skonfiguruj / sprawdź AMD** tworzy osobne środowisko Python 3.12,
-pobiera oficjalne AMD ROCm 7.2.1 i dopiero po prawdziwym teście udostępnia kartę do lokalnego
-tłumaczenia. Oficjalna lista Windows obejmuje RX 9070/9070 XT, AI PRO R9700, RX 9060 XT,
-RX 7900 XTX, PRO W7900/W7900 Dual Slot i RX 7700. Niewymienione Radeony nadal są wykrywane,
-ale bez potwierdzonego backendu pracują przez CPU. Przy wypalaniu filmu aplikacja może niezależnie
+PyTorch. PolySub po wykryciu zgodnej karty sam dobiera jej architekturę, w tle pobiera własne
+odizolowane środowisko Python oraz oficjalny PyTorch ROCm 7.14, a następnie wykonuje prawdziwe
+mnożenie macierzy na GPU. Nie ma osobnego przycisku konfiguracji ani zależności od Pythona
+zainstalowanego w systemie. RX 9070 XT jest automatycznie przypisywany do pakietu `gfx1201`.
+Obsługiwane są aktualne oficjalne cele AMD dla RX 9000, RX 7000, wybranych RDNA2, Radeon PRO
+i Radeonów w procesorach Ryzen. Karta bez oficjalnego pakietu lub z niezgodnym sterownikiem
+pozostaje jawnie na CPU. AMD wymaga obecnie Windows 11 25H2 i zgodnego sterownika Adrenalin;
+program nie modyfikuje sterownika systemowego. Przy wypalaniu filmu aplikacja może niezależnie
 użyć AMD AMF lub Intel Quick Sync, jeśli udostępnia je FFmpeg.
 
 Sekcja **Wykorzystanie procesora** mapuje wybrany procent na prawdziwą liczbę logicznych wątków.
@@ -252,7 +256,7 @@ zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie j
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.4.9 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.0 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 

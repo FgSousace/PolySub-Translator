@@ -13,12 +13,10 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import __version__
 from .amd_runtime import (
-    AMD_ROCM_GUIDE_URL,
     AMD_RUNTIME_TARGET_PREFIX,
-    OFFICIALLY_SUPPORTED_WINDOWS_GPUS,
-    ROCM_DRIVER_VERSION,
     ROCM_VERSION,
     install_amd_runtime,
+    select_amd_runtime_plan,
 )
 from .appearance import (
     DEFAULT_INTERFACE,
@@ -214,6 +212,7 @@ class PolySubApp(tk.Tk):
         self._active_translation_engine = None
         self._translation_running = False
         self._amd_runtime_setup_running = False
+        self._amd_runtime_attempted = False
         self._build_style()
         self._build_ui()
         self._apply_theme_to_widgets()
@@ -736,7 +735,7 @@ class PolySubApp(tk.Tk):
         self.refresh_devices_button = ttk.Button(
             compute_frame,
             text="Odśwież listę sprzętu",
-            command=self._start_device_detection,
+            command=self._retry_device_detection,
         )
         self.refresh_devices_button.grid(row=0, column=1, padx=(10, 0))
         self.device_status_var = tk.StringVar(
@@ -751,21 +750,15 @@ class PolySubApp(tk.Tk):
         amd_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(9, 0))
         amd_row.columnconfigure(0, weight=1)
         self.amd_runtime_status_var = tk.StringVar(
-            value="AMD Radeon: opcjonalne, odizolowane środowisko ROCm dla Windows 11."
+            value="AMD Radeon: automatyczne wykrywanie i przygotowanie ROCm w tle."
         )
-        ttk.Label(
+        self.amd_runtime_status_label = ttk.Label(
             amd_row,
             textvariable=self.amd_runtime_status_var,
             style="Muted.TLabel",
-            wraplength=660,
-        ).grid(row=0, column=0, sticky="w")
-        self.amd_runtime_button = ttk.Button(
-            amd_row,
-            text="Skonfiguruj / sprawdź AMD",
-            command=self._configure_amd_runtime,
-            state="disabled" if self._amd_runtime_setup_running else "normal",
+            wraplength=820,
         )
-        self.amd_runtime_button.grid(row=0, column=1, sticky="e", padx=(10, 0))
+        self.amd_runtime_status_label.grid(row=0, column=0, columnspan=2, sticky="w")
 
         cpu_frame = ttk.LabelFrame(
             container,
@@ -1515,48 +1508,41 @@ class PolySubApp(tk.Tk):
         thread = threading.Thread(target=self._device_detection_worker, daemon=True)
         thread.start()
 
-    def _configure_amd_runtime(self) -> None:
-        if self._amd_runtime_setup_running:
+    def _retry_device_detection(self) -> None:
+        if not self._amd_runtime_setup_running:
+            self._amd_runtime_attempted = False
+        self._start_device_detection()
+
+    def _start_automatic_amd_runtime(self, gpu_names: tuple[str, ...]) -> None:
+        if self._amd_runtime_setup_running or self._amd_runtime_attempted:
             return
-        if os.name != "nt":
-            messagebox.showinfo(
-                "AMD ROCm dla Windows",
-                "Automatyczny konfigurator jest przeznaczony dla 64-bitowego Windows 11.",
-                parent=self,
+        plan = select_amd_runtime_plan(gpu_names)
+        self._amd_runtime_attempted = True
+        if plan is None:
+            self.amd_runtime_status_var.set(
+                "Radeon wykryty, ale AMD nie publikuje dla niego zgodnego pakietu ROCm "
+                f"{ROCM_VERSION} na Windows. Program użyje CPU."
             )
             return
-        supported = "\n".join(f"• {name}" for name in OFFICIALLY_SUPPORTED_WINDOWS_GPUS)
-        detected_amd = [
-            device.name
-            for device in self._compute_devices
-            if device.kind == "gpu" and device.vendor == "AMD"
-        ]
-        detected = ", ".join(detected_amd) or "jeszcze nie wykryto karty AMD"
-        if not messagebox.askyesno(
-            "Skonfigurować akcelerację AMD ROCm?",
-            f"Wykryty sprzęt: {detected}\n\n"
-            f"PolySub utworzy osobne środowisko AMD ROCm {ROCM_VERSION}. "
-            "Pobieranie obejmuje kilka gigabajtów i wymaga:\n"
-            "• Windows 11 64-bit,\n"
-            "• Python 3.12 64-bit,\n"
-            f"• sterownik AMD Adrenalin {ROCM_DRIVER_VERSION},\n"
-            "• jednej z oficjalnie obsługiwanych kart:\n"
-            f"{supported}\n\n"
-            "Rozpocząć pobieranie z oficjalnego repozytorium AMD?",
-            parent=self,
-        ):
-            return
         self._amd_runtime_setup_running = True
-        self.amd_runtime_button.configure(state="disabled", text="Konfigurowanie AMD…")
         self.amd_runtime_status_var.set(
-            "Przygotowywanie AMD ROCm. Nie zamykaj programu podczas instalacji."
+            f"Radeon wykryty — automatyczne przygotowywanie ROCm {ROCM_VERSION} "
+            f"dla {plan.target}. Możesz nadal używać programu; do zakończenia działa CPU."
         )
-        thread = threading.Thread(target=self._amd_runtime_setup_worker, daemon=True)
+        self._append_activity(
+            f"Automatyczna konfiguracja AMD ROCm {ROCM_VERSION} ({plan.target}) rozpoczęta."
+        )
+        thread = threading.Thread(
+            target=self._amd_runtime_setup_worker,
+            args=(gpu_names,),
+            daemon=True,
+        )
         thread.start()
 
-    def _amd_runtime_setup_worker(self) -> None:
+    def _amd_runtime_setup_worker(self, gpu_names: tuple[str, ...]) -> None:
         try:
             runtime = install_amd_runtime(
+                gpu_names,
                 status=lambda message: self.after(0, self._amd_runtime_setup_status, message)
             )
         except Exception as exc:
@@ -1570,26 +1556,18 @@ class PolySubApp(tk.Tk):
 
     def _amd_runtime_setup_finished(self, message: str) -> None:
         self._amd_runtime_setup_running = False
-        self.amd_runtime_button.configure(state="normal", text="Sprawdź ponownie AMD")
         self.amd_runtime_status_var.set(message)
         self._append_activity(f"AMD ROCm gotowe — {message}")
         self._start_device_detection()
-        messagebox.showinfo(
-            "AMD ROCm jest gotowe",
-            f"{message}\n\nKarta pojawi się na liście jako backend ROCm. "
-            "Tryb Auto będzie mógł wybrać ją do lokalnego tłumaczenia.",
-            parent=self,
-        )
 
     def _amd_runtime_setup_failed(self, message: str) -> None:
         self._amd_runtime_setup_running = False
-        self.amd_runtime_button.configure(state="normal", text="Spróbuj ponownie AMD")
-        self.amd_runtime_status_var.set("Konfiguracja AMD nie została ukończona.")
-        messagebox.showerror(
-            "Nie udało się skonfigurować AMD ROCm",
-            f"{message}\n\nOficjalna instrukcja AMD:\n{AMD_ROCM_GUIDE_URL}",
-            parent=self,
+        self.amd_runtime_status_var.set(
+            f"AMD ROCm nie zostało uruchomione — program użyje CPU. {message} "
+            "Po poprawieniu sterownika lub internetu kliknij „Odśwież listę sprzętu”."
         )
+        self.device_status_var.set("Akceleracja AMD niedostępna — aktywny bezpieczny CPU.")
+        self._append_activity(f"AMD ROCm: konfiguracja nieudana — {message}")
 
     def _device_detection_worker(self) -> None:
         try:
@@ -1626,14 +1604,23 @@ class PolySubApp(tk.Tk):
             if device.vendor == "AMD" and "ROCm" in device.backend
         ]
         if ready_amd:
+            self._amd_runtime_attempted = True
             self.amd_runtime_status_var.set(
                 f"AMD ROCm gotowe: {', '.join(ready_amd)}."
             )
-        elif any(device.vendor == "AMD" for device in devices):
-            self.amd_runtime_status_var.set(
-                "Radeon wykryty, ale akceleracja ROCm nie jest gotowa. "
-                "Kliknij »Skonfiguruj / sprawdź AMD«; do tego czasu program użyje CPU."
+        else:
+            amd_names = tuple(
+                device.name
+                for device in devices
+                if device.kind == "gpu" and device.vendor == "AMD"
             )
+            if amd_names and not self._amd_runtime_setup_running:
+                self.amd_runtime_status_var.set(
+                    "Radeon wykryty — PolySub automatycznie sprawdza właściwy pakiet ROCm. "
+                    "Do zakończenia przygotowania dostępny jest CPU."
+                )
+                if os.name == "nt":
+                    self.after(50, self._start_automatic_amd_runtime, amd_names)
 
     def _device_detection_failed(self, _message: str) -> None:
         self._device_detection_running = False
@@ -2413,7 +2400,6 @@ class PolySubApp(tk.Tk):
             self.api_entry.configure(state="disabled")
             self.device_combo.configure(state="disabled")
             self.refresh_devices_button.configure(state="disabled")
-            self.amd_runtime_button.configure(state="disabled")
             self.cpu_usage_combo.configure(state="disabled")
             self.automatic_mode_checkbox.configure(state="disabled")
             self.review_mode_checkbox.configure(state="disabled")
@@ -2426,9 +2412,6 @@ class PolySubApp(tk.Tk):
         self.device_combo.configure(state="readonly")
         self.refresh_devices_button.configure(
             state="disabled" if self._device_detection_running else "normal"
-        )
-        self.amd_runtime_button.configure(
-            state="disabled" if self._amd_runtime_setup_running else "normal"
         )
         self.cpu_usage_combo.configure(state="readonly")
         self.automatic_mode_checkbox.configure(state="normal")

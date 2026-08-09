@@ -5,6 +5,17 @@ from __future__ import annotations
 import json
 import sys
 import traceback
+from pathlib import Path
+
+
+def add_packaged_source_path() -> None:
+    """Make bundled PolySub sources visible to isolated embedded Python."""
+
+    worker_directory = Path(__file__).resolve().parent
+    for candidate in (worker_directory / "src", worker_directory.parent / "src"):
+        if (candidate / "polysub").is_dir():
+            sys.path.insert(0, str(candidate))
+            return
 
 
 def emit(payload: dict[str, object]) -> None:
@@ -13,6 +24,7 @@ def emit(payload: dict[str, object]) -> None:
 
 
 def main() -> None:
+    add_packaged_source_path()
     engine = None
     for raw_line in sys.stdin:
         try:
