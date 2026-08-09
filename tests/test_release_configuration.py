@@ -1,7 +1,10 @@
 import re
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 from polysub import __version__
 from polysub.cli import build_parser
@@ -28,4 +31,3 @@ def test_cli_accepts_every_catalog_model() -> None:
 
     assert model_action.default == DEFAULT_MODEL_ID
     assert tuple(model_action.choices) == tuple(model.id for model in MODEL_CATALOG)
-
