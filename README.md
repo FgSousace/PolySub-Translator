@@ -1,4 +1,6 @@
-# PolySub Translator
+# PolySub Translator™
+
+**Autor: fgSousace • Copyright © 2026 fgSousace • użytek niekomercyjny**
 
 **Context-aware multilingual subtitle translator with automatic language detection and
 interactive review.**
@@ -8,7 +10,8 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.4.8-alpha` — nowoczesny interfejs, 10 motywów, 20 opcjonalnych modeli AI i profile czytelności napisów.
+> Status: `v0.4.9-alpha` — anulowanie z bezpiecznym wznowieniem, tylko gotowe modele w GUI,
+> konfigurator AMD ROCm, CUDA 12.8 i dopracowany wybór plików.
 
 ## Najważniejsze funkcje
 
@@ -32,6 +35,9 @@ niejasnych fragmentów.
 - pięć profili czasu napisów: Zalecane, Krótsze, Dłuższe, Oryginalne i Własne;
 - zachowanie początku każdej wypowiedzi oraz automatyczne zapobieganie nachodzeniu napisów;
 - zapis awaryjny i automatyczne wznowienie przerwanego zadania;
+- przycisk anulowania tłumaczenia bez utraty ukończonych partii;
+- główna lista zawierająca tylko pobrane i kompletne modele AI;
+- wspólny filtr obsługiwanych plików oraz filtr **Wszystkie pliki (*.*)**;
 - informacje o postaciach, płci, relacjach i stylu jako dodatkowy kontekst;
 - edytor pokazujący oryginał i tłumaczenie obok siebie;
 - oznaczanie kwestii z możliwie niejednoznaczną płcią lub odmianą;
@@ -92,6 +98,8 @@ Przycisk **Pobierz / usuń…** otwiera menedżer modeli. Żaden model tłumacze
 wciskany do instalatora: użytkownik widzi szacowany rozmiar, wymagania RAM/VRAM i licencję, a
 dopiero po potwierdzeniu pliki są pobierane z oficjalnego repozytorium Hugging Face. Przerwane
 pobieranie można wznowić, a każdy model można później usunąć bez naruszania pozostałych.
+Główne pole wyboru celowo pokazuje tylko modele, których stan to **Pobrany i gotowy**.
+Nieukończony model pozostaje widoczny wyłącznie w menedżerze, gdzie można wznowić pobieranie.
 
 Kolejność 1–20 jest orientacyjnym rankingiem ogólnej jakości, a nie gwarancją dla każdego języka.
 Mały OPUS wyspecjalizowany w jednej parze może wypaść lepiej od większego modelu ogólnego właśnie
@@ -139,10 +147,14 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-W instalatorze Windows od wersji 0.4.6 znajduje się środowisko PyTorch CUDA 12.6 i cuDNN 9. Pakiet jest
-przygotowany również dla kart NVIDIA z serii RTX 20, w tym RTX 2080; potrzebny jest aktualny
-sterownik NVIDIA. Sprzęt AMD i Intel nadal jest wykrywany dynamicznie, a przy wypalaniu filmu
-program potrafi użyć odpowiednio AMD AMF lub Intel Quick Sync, jeśli udostępnia je FFmpeg.
+Instalator v0.4.9 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
+PyTorch, dlatego przycisk **Skonfiguruj / sprawdź AMD** tworzy osobne środowisko Python 3.12,
+pobiera oficjalne AMD ROCm 7.2.1 i dopiero po prawdziwym teście udostępnia kartę do lokalnego
+tłumaczenia. Oficjalna lista Windows obejmuje RX 9070/9070 XT, AI PRO R9700, RX 9060 XT,
+RX 7900 XTX, PRO W7900/W7900 Dual Slot i RX 7700. Niewymienione Radeony nadal są wykrywane,
+ale bez potwierdzonego backendu pracują przez CPU. Przy wypalaniu filmu aplikacja może niezależnie
+użyć AMD AMF lub Intel Quick Sync, jeśli udostępnia je FFmpeg.
 
 Sekcja **Wykorzystanie procesora** mapuje wybrany procent na prawdziwą liczbę logicznych wątków.
 Ustawienie 100% przekazuje wszystkie dostępne wątki do PyTorch, Whispera i kodera CPU oraz zwiększa
@@ -150,9 +162,11 @@ bezpieczny rozmiar partii tłumaczenia. Nie zmienia parametrów jakości modelu.
 zadań może chwilowo spaść podczas pobierania, odczytu plików albo etapów, których nie da się
 równolegle rozłożyć, ale program nie wykonuje sztucznego obciążenia bez użytecznej pracy.
 
-Kod projektu ma licencję MIT. Wagi wszystkich modeli są pobierane osobno i podlegają licencji
-widocznej w menedżerze oraz na oficjalnej karcie danego modelu. PolySub nie dołącza wag modeli ani
-kluczy API do repozytorium i instalatora.
+Od wersji 0.4.9 oryginalny kod projektu jest udostępniany na warunkach
+**PolyForm Noncommercial License 1.0.0**. Dozwolony jest użytek osobisty i inny niekomercyjny;
+użytek zarobkowy lub inny komercyjny wymaga osobnej pisemnej zgody fgSousace. Wcześniejsze
+wydania zachowują warunki, na których zostały opublikowane. Wagi modeli są pobierane osobno i
+podlegają licencji widocznej w menedżerze oraz na oficjalnej karcie danego modelu.
 
 ## Dodatkowa funkcja: film zamiast gotowego SRT
 
@@ -219,7 +233,7 @@ Instalator działa dla bieżącego użytkownika i nie wymaga uprawnień administ
 
 Wersje od 0.4.6 są większe od 0.4.5, ponieważ zawierają biblioteki CUDA i cuDNN potrzebne do działania
 na zgodnych kartach NVIDIA bez ręcznego instalowania środowiska programistycznego CUDA. Starsze
-wydania 0.4.5 oraz 0.4.4 pozostają dostępne na stronie Releases.
+wydania 0.4.8, 0.4.7, 0.4.6, 0.4.5 oraz 0.4.4 pozostają dostępne na stronie Releases.
 
 Po uruchomieniu program dyskretnie sprawdza najnowsze wydanie na GitHubie. Jeśli jest dostępna
 nowsza wersja, pokaże jej numer i przycisk **Pobierz wersję…**. Instalator nigdy nie uruchamia się
@@ -238,7 +252,7 @@ zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie j
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6, 0.4.7 i 0.4.8 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.4.9 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 
@@ -258,7 +272,7 @@ python -m pip install --upgrade pip
 ### Wariant lokalny
 
 ```powershell
-pip install "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu126
+pip install "torch==2.11.0" --index-url https://download.pytorch.org/whl/cu128
 pip install -e ".[local,fasttext,video]"
 polysub-gui
 ```
@@ -287,16 +301,16 @@ funkcji filmu, wystarczy podstawowe `pip install -e .`.
 polysub-gui
 ```
 
-1. Wybierz plik SRT albo film. Obsługa filmu jest funkcją dodatkową.
+1. Kliknij **Wyszukaj napisy w filmie lub wybierz plik** i wskaż SRT albo film.
 2. Dla filmu bez napisów wybierz szybszy lub dokładniejszy wariant Whisper.
 3. Sprawdź automatycznie wykryty język i wybierz język docelowy.
 4. Wybierz lokalny AI albo DeepL API; przyciskiem **Pobierz / usuń…** zarządzaj 20 modelami.
-5. Wybierz **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
+5. Zaznacz wymagany checkbox **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
 6. Zostaw **Automatycznie** albo wybierz wykryty procesor lub kartę graficzną.
 7. Wybierz limit wykorzystania procesora; domyślne 100% daje maksymalną wydajność.
 8. Wybierz czas napisów; domyślne **Automatyczna czytelność — zalecane** nie dopuszcza nakładania.
 9. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
-10. Rozpocznij tłumaczenie.
+10. Rozpocznij tłumaczenie; w razie potrzeby użyj **Anuluj tłumaczenie**, aby zachować postęp.
 11. Dla filmu wybierz **Dodaj przełączaną ścieżkę — szybko** albo
     **Wypal napisy na obrazie — TV**.
 
@@ -406,7 +420,13 @@ src/polysub/
 - pamięć zaakceptowanych tłumaczeń;
 - podpis cyfrowy instalatora Windows certyfikatem code-signing.
 
-## Licencja
+## Licencja i autor
 
-[MIT](LICENSE). Informacje o bibliotekach i plikach wykonywalnych dołączanych do wersji Windows są
-zebrane w [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+PolySub Translator™ został stworzony przez **fgSousace**.
+
+Required Notice: PolySub Translator™ — Copyright © 2026 fgSousace. Licensed for noncommercial use only.
+
+Kod od v0.4.9: [PolyForm Noncommercial License 1.0.0](LICENSE). Informacje o wymaganym oznaczeniu
+znajdują się w [NOTICE.txt](NOTICE.txt), a licencje bibliotek i modeli w
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Pełna instrukcja:
+[docs/INSTRUKCJA_OBSLUGI_PL.md](docs/INSTRUKCJA_OBSLUGI_PL.md).

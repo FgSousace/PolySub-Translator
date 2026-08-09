@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .cancellation import CancellationToken
 from .checkpoint import CheckpointStore, checkpoint_for
 from .engines.base import TranslationEngine, TranslationEngineError
 from .markup import ProtectedText
@@ -41,12 +42,15 @@ class TranslationService:
         progress: ProgressCallback | None = None,
         status: StatusCallback | None = None,
         output_path: Path | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> TranslationResult:
         original = document.clone()
         translated = document.clone()
         total_words = original.total_words
         progress = progress or (lambda _processed, _total: None)
         status = status or (lambda _message: None)
+        cancellation = cancellation or CancellationToken()
+        cancellation.raise_if_cancelled()
         status("Sprawdzanie zapisu wznowienia...")
         store = self._checkpoint(original, options)
         cached = store.load() if store else {}
@@ -55,6 +59,7 @@ class TranslationService:
         processed_words = 0
 
         for position, text in cached.items():
+            cancellation.raise_if_cancelled()
             if 0 <= position < len(translated.cues):
                 translated.cues[position].text = text
                 restored_translations[position] = text
@@ -76,6 +81,7 @@ class TranslationService:
         progress(processed_words, total_words)
 
         for start in range(0, len(pending), batch_size):
+            cancellation.raise_if_cancelled()
             positions = pending[start : start + batch_size]
             protected = [ProtectedText.from_text(original.cues[pos].text) for pos in positions]
             contexts = [self._context_for(original, pos, options) for pos in positions]
@@ -98,15 +104,19 @@ class TranslationService:
             if store:
                 store.save(restored_translations)
             progress(processed_words, total_words)
+            cancellation.raise_if_cancelled()
 
+        cancellation.raise_if_cancelled()
         status("Kontrola struktury, timestampów i formatowania...")
         translated.assert_structure_matches(original)
         status("Dopasowywanie czasu wyświetlania napisów bez zmiany ich początku...")
         timing_result = optimize_subtitle_timing(translated, options.subtitle_timing)
+        cancellation.raise_if_cancelled()
         translated = timing_result.document
         status(timing_result.stats.summary)
         status("Analizowanie jakości gotowego tłumaczenia...")
         review_items = self._review(original, translated, options, formatting)
+        cancellation.raise_if_cancelled()
         if output_path:
             status("Zapisywanie przetłumaczonego pliku...")
         elif options.mode is TranslationMode.REVIEW:

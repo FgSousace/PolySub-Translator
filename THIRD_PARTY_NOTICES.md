@@ -1,7 +1,8 @@
 # Third-party notices
 
-PolySub Translator is licensed under the MIT License. The Windows package also contains or uses
-the following separately licensed components:
+Starting with version 0.4.9, PolySub Translator™ is licensed under the PolyForm Noncommercial
+License 1.0.0. The Windows package also contains or uses the following separately licensed
+components:
 
 - **faster-whisper** — MIT License — https://github.com/SYSTRAN/faster-whisper
 - **CTranslate2** — MIT License — https://github.com/OpenNMT/CTranslate2
@@ -19,6 +20,8 @@ the following separately licensed components:
   https://docs.nvidia.com/cuda/eula/
 - **NVIDIA cuDNN runtime libraries** — NVIDIA cuDNN Software License Agreement —
   https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html
+- **AMD ROCm runtime libraries** — optionally downloaded from AMD into an isolated environment;
+  AMD ROCm licenses — https://rocm.docs.amd.com/en/latest/about/license.html
 - **libass** (used by FFmpeg for permanent subtitle rendering when present in the bundled build)
   — ISC License — https://github.com/libass/libass
 

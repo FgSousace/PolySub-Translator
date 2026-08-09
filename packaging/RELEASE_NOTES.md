@@ -1,4 +1,30 @@
-## Nowości w wersji 0.4.8
+## Nowości w wersji 0.4.9
+
+- główny przycisk prowadzi najpierw do **Wyszukaj napisy w filmie lub wybierz plik**, a po
+  prawidłowym wczytaniu zmienia się w **Rozpocznij tłumaczenie**;
+- okno wyboru ma wspólny filtr wszystkich obsługiwanych SRT i filmów, osobne filtry formatów
+  oraz **Wszystkie pliki (*.*)**; aplikacja opisuje typ pliku i odrzuca nieobsługiwane dane;
+- tryb automatyczny i tryb weryfikacji są wymaganymi, wzajemnie wykluczającymi się checkboxami;
+- główna lista modeli pokazuje wyłącznie dodatki faktycznie pobrane, kompletne i gotowe;
+- przycisk **Anuluj tłumaczenie** kończy pracę bez czyszczenia punktu wznowienia, dlatego
+  ukończone partie nie przepadają;
+- NVIDIA została zaktualizowana do PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla GTX 10 oraz
+  RTX 20/30/40/50 z aktualnym sterownikiem;
+- dodano konfigurator odizolowanego AMD ROCm 7.2.1 dla Windows 11: pobiera oficjalne paczki AMD,
+  sprawdza prawdziwy backend i uruchamia tłumaczenie w osobnym procesie, aby nie kolidowało
+  z bibliotekami NVIDIA;
+- RX 9070 XT jest na oficjalnej liście AMD i po przejściu testu pojawia się jako gotowy backend
+  ROCm; niewspierana albo nieskonfigurowana karta pozostaje jawnie na CPU;
+- dodano stałe oznaczenie **PolySub Translator™**, autora **fgSousace**, metadane EXE, ekran
+  „O programie”, `NOTICE.txt` i pełną instrukcję obsługi;
+- od v0.4.9 oryginalny kod aplikacji jest udostępniany na warunkach PolyForm Noncommercial
+  License 1.0.0: użytek osobisty i inny niekomercyjny jest dozwolony, a komercyjny wymaga
+  osobnej zgody autora;
+- instalator publikuje `Setup.exe` i ZIP z instalatorem; nowa paczka portable nie jest tworzona.
+
+Wersje 0.4.8, 0.4.7, 0.4.6, 0.4.5 i 0.4.4 pozostają osobno w historii GitHub Releases.
+
+## Wcześniej dodane w wersji 0.4.8
 
 - całkowicie odświeżony, domyślny interfejs **Nowoczesny** ma stały panel boczny i pięć skrótów:
   Start, Tłumaczenie, Modele AI, Film i sprzęt oraz Ustawienia;
@@ -120,6 +146,6 @@ Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 Windows SmartScreen może wyświetlić ostrzeżenie, ponieważ instalator nie ma jeszcze płatnego
 certyfikatu podpisu cyfrowego. W takim przypadku wybierz **Więcej informacji → Uruchom mimo to**.
 
-Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6, 0.4.7 i 0.4.8 nie zawierają nowej
+Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.4.9 nie zawierają nowej
 paczki portable, ponieważ dołączone biblioteki CUDA przekroczyłyby limit pojedynczego pliku GitHub
 Releases. Portable z wersji 0.4.5 nadal pozostaje dostępne w historii wydań.

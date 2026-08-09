@@ -113,6 +113,17 @@ def detect_compute_devices(
     if ctranslate2 is not None:
         devices = _add_ctranslate2_accelerators(devices, ctranslate2)
 
+    if os.name == "nt":
+        # AMD's native Windows PyTorch wheel cannot coexist in-process with the
+        # NVIDIA CUDA wheel bundled by the installer. Only advertise ROCm after
+        # the isolated worker environment passes a real torch/GPU probe.
+        try:
+            from .amd_runtime import attach_amd_runtime_devices, probe_amd_runtime
+
+            devices = attach_amd_runtime_devices(devices, probe_amd_runtime())
+        except Exception:
+            pass
+
     return _make_labels_unique(devices)
 
 

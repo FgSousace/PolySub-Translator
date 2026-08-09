@@ -1,6 +1,6 @@
-#define MyAppName "PolySub Translator"
-#define MyAppVersion "0.4.8"
-#define MyAppPublisher "FgSousace"
+#define MyAppName "PolySub Translator™"
+#define MyAppVersion "0.4.9"
+#define MyAppPublisher "fgSousace"
 #define MyAppURL "https://github.com/FgSousace/PolySub-Translator"
 #define MyAppExeName "PolySubTranslator.exe"
 
@@ -43,6 +43,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\PolySubTranslator\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "INSTALLATION.txt"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "..\NOTICE.txt"; DestDir: "{app}"; DestName: "NOTICE.txt"; Flags: ignoreversion
+Source: "..\docs\INSTRUKCJA_OBSLUGI_PL.md"; DestDir: "{app}"; DestName: "INSTRUKCJA_OBSLUGI.md"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\PolySub Translator"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
@@ -52,3 +55,4 @@ Name: "{autodesktop}\PolySub Translator"; Filename: "{app}\{#MyAppExeName}"; Wor
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--model-manager"; Description: "Wybierz i pobierz opcjonalne modele AI"; Flags: nowait postinstall skipifsilent unchecked
 Filename: "{app}\README.txt"; Description: "Otwórz instrukcję README"; Flags: postinstall shellexec skipifsilent unchecked
+Filename: "{app}\INSTRUKCJA_OBSLUGI.md"; Description: "Otwórz pełną instrukcję obsługi"; Flags: postinstall shellexec skipifsilent unchecked

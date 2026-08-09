@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from polysub.cancellation import CancellationToken, TranslationCancelled
 from polysub.engines.base import TranslationEngine, TranslationEngineError
 from polysub.models import ReviewReason, TranslationMode
 from polysub.service import TranslationOptions, TranslationService
@@ -100,5 +101,34 @@ def test_checkpoint_resumes_finished_cues(tmp_path: Path) -> None:
     assert checkpoint.exists()
 
     resumed = TranslationService(FakeEngine()).translate(document, options)
+    assert resumed.resumed_cues == 1
+    assert not checkpoint.exists()
+
+
+def test_cancellation_stops_between_batches_and_preserves_checkpoint(tmp_path: Path) -> None:
+    source = tmp_path / "movie.srt"
+    source.write_text(SAMPLE, encoding="utf-8")
+    document = SRTDocument.load(source)
+    token = CancellationToken()
+
+    def cancel_after_first_batch(done: int, total: int) -> None:
+        if 0 < done < total:
+            token.cancel()
+
+    with pytest.raises(TranslationCancelled, match="anulowane"):
+        TranslationService(FakeEngine()).translate(
+            document,
+            TranslationOptions("en", "pl"),
+            progress=cancel_after_first_batch,
+            cancellation=token,
+        )
+
+    checkpoint = source.with_suffix(".srt.polysub.json")
+    assert checkpoint.exists()
+
+    resumed = TranslationService(FakeEngine()).translate(
+        document,
+        TranslationOptions("en", "pl"),
+    )
     assert resumed.resumed_cues == 1
     assert not checkpoint.exists()

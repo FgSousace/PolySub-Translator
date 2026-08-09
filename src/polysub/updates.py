@@ -54,6 +54,7 @@ def check_for_updates(
             RELEASE_API_URL,
             headers={
                 "Accept": "application/vnd.github+json",
+                "Cache-Control": "no-cache",
                 "User-Agent": f"PolySub-Translator/{current_version}",
                 "X-GitHub-Api-Version": "2022-11-28",
             },

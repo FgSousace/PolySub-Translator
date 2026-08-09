@@ -6,6 +6,7 @@ import webbrowser
 from collections.abc import Callable
 from tkinter import messagebox, ttk
 
+from .branding import PRODUCT_NAME
 from .model_downloads import (
     ModelDownloadError,
     ModelStatus,
@@ -36,7 +37,7 @@ class ModelManagerWindow(tk.Toplevel):
         on_close: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.title("PolySub — modele AI do tłumaczenia")
+        self.title(f"{PRODUCT_NAME} — modele AI do tłumaczenia")
         self.geometry("1040x700")
         self.minsize(820, 560)
         if parent.winfo_viewable():

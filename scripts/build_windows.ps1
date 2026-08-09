@@ -12,9 +12,9 @@ if (-not $SkipDependencyInstall) {
         throw "Nie udało się zaktualizować pip."
     }
 
-    python -m pip install "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu126
+    python -m pip install "torch==2.11.0" --index-url https://download.pytorch.org/whl/cu128
     if ($LASTEXITCODE -ne 0) {
-        throw "Nie udało się zainstalować środowiska NVIDIA CUDA 12.6."
+        throw "Nie udało się zainstalować środowiska NVIDIA CUDA 12.8."
     }
 
     python -m pip install -e ".[local,fasttext,video,build]"
@@ -22,9 +22,9 @@ if (-not $SkipDependencyInstall) {
         throw "Nie udało się zainstalować zależności do budowania."
     }
 
-    python -c "import torch; assert torch.version.cuda == '12.6', torch.version.cuda"
+    python -c "import torch; assert torch.version.cuda == '12.8', torch.version.cuda"
     if ($LASTEXITCODE -ne 0) {
-        throw "Zainstalowany PyTorch nie zawiera oczekiwanego środowiska CUDA 12.6."
+        throw "Zainstalowany PyTorch nie zawiera oczekiwanego środowiska CUDA 12.8."
     }
 }
 

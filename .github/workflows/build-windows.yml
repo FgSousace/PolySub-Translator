@@ -7,6 +7,10 @@ on:
     paths:
       - "src/**"
       - "packaging/**"
+      - "docs/**"
+      - "LICENSE"
+      - "NOTICE.txt"
+      - "THIRD_PARTY_NOTICES.md"
       - "scripts/build_windows.ps1"
       - "pyproject.toml"
       - ".github/workflows/build-windows.yml"
@@ -31,9 +35,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "torch==2.12.1" --index-url https://download.pytorch.org/whl/cu126
+          python -m pip install "torch==2.11.0" --index-url https://download.pytorch.org/whl/cu128
           python -m pip install -e ".[local,fasttext,video,build]"
-          python -c "import torch; assert torch.version.cuda == '12.6', torch.version.cuda"
+          python -c "import torch; assert torch.version.cuda == '12.8', torch.version.cuda"
           python -m pip cache purge
 
       - name: Ensure Inno Setup is available
@@ -60,6 +64,8 @@ jobs:
             "--self-test-hardware",
             "--self-test-performance",
             "--self-test-nvidia-runtime",
+            "--self-test-branding",
+            "--self-test-amd-runtime",
             "--self-test-model-catalog",
             "--self-test-subtitle-timing",
             "--self-test-gui"
@@ -100,12 +106,19 @@ jobs:
           if (-not (Test-Path $installedReadme)) {
             throw "Instalator nie utworzył README.txt."
           }
+          foreach ($requiredFile in @("LICENSE.txt", "NOTICE.txt", "INSTRUKCJA_OBSLUGI.md")) {
+            if (-not (Test-Path (Join-Path $installDir $requiredFile))) {
+              throw "Instalator nie utworzył pliku $requiredFile."
+            }
+          }
           foreach ($argument in @(
             "--version",
             "--self-test-video",
             "--self-test-hardware",
             "--self-test-performance",
             "--self-test-nvidia-runtime",
+            "--self-test-branding",
+            "--self-test-amd-runtime",
             "--self-test-model-catalog",
             "--self-test-subtitle-timing",
             "--self-test-gui"
@@ -143,11 +156,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
           Copy-Item ".\installer-output\PolySub-Translator-Setup.exe" (Join-Path $packageDir "PolySub-Translator-Setup.exe")
           Copy-Item ".\packaging\INSTALLATION.txt" (Join-Path $packageDir "README.txt")
+          Copy-Item ".\docs\INSTRUKCJA_OBSLUGI_PL.md" (Join-Path $packageDir "INSTRUKCJA_OBSLUGI.md")
+          Copy-Item ".\LICENSE" (Join-Path $packageDir "LICENSE.txt")
+          Copy-Item ".\NOTICE.txt" (Join-Path $packageDir "NOTICE.txt")
           Compress-Archive -Path "$packageDir\*" -DestinationPath ".\installer-output\PolySub-Translator-Installer.zip"
 
           $testDir = Join-Path $env:RUNNER_TEMP "PolySub-Installer-Zip-Test"
           Expand-Archive -Path ".\installer-output\PolySub-Translator-Installer.zip" -DestinationPath $testDir -Force
-          foreach ($requiredFile in @("PolySub-Translator-Setup.exe", "README.txt")) {
+          foreach ($requiredFile in @(
+            "PolySub-Translator-Setup.exe",
+            "README.txt",
+            "INSTRUKCJA_OBSLUGI.md",
+            "LICENSE.txt",
+            "NOTICE.txt"
+          )) {
             if (-not (Test-Path (Join-Path $testDir $requiredFile))) {
               throw "W paczce instalatora brakuje pliku $requiredFile."
             }

@@ -14,6 +14,11 @@ class TranslationEngine(ABC):
     max_batch_size = 8
     supports_context = False
 
+    def cancel(self) -> None:
+        """Request cancellation of an in-flight operation when the backend supports it."""
+
+        return None
+
     @abstractmethod
     def translate_batch(
         self,

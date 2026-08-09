@@ -12,7 +12,11 @@ PROJECT_ROOT = Path(SPECPATH).parent
 
 datas = [
     (str(PROJECT_ROOT / "LICENSE"), "."),
+    (str(PROJECT_ROOT / "NOTICE.txt"), "."),
     (str(PROJECT_ROOT / "THIRD_PARTY_NOTICES.md"), "."),
+    (str(PROJECT_ROOT / "docs" / "INSTRUKCJA_OBSLUGI_PL.md"), "."),
+    (str(PROJECT_ROOT / "packaging" / "amd_worker_entry.py"), "amd-worker"),
+    (str(PROJECT_ROOT / "src" / "polysub"), "amd-worker/src/polysub"),
 ]
 binaries = []
 hiddenimports = [
@@ -83,6 +87,7 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
+    version=str(PROJECT_ROOT / "packaging" / "version_info.txt"),
 )
 
 app = COLLECT(

@@ -58,6 +58,24 @@ def test_update_check_returns_direct_setup_download() -> None:
     assert result.latest_version == "0.4.4"
     assert result.installer_url == installer
     assert session.calls[0][1]["timeout"] == 8.0
+    assert session.calls[0][1]["headers"]["Cache-Control"] == "no-cache"
+
+
+def test_version_045_detects_published_049_release() -> None:
+    session = FakeSession(
+        {
+            "tag_name": "v0.4.9",
+            "html_url": (
+                "https://github.com/FgSousace/PolySub-Translator/releases/tag/v0.4.9"
+            ),
+            "assets": [],
+        }
+    )
+
+    result = check_for_updates("0.4.5", session=session)
+
+    assert result.update_available
+    assert result.latest_version == "0.4.9"
 
 
 def test_untrusted_download_url_falls_back_to_release_page() -> None:

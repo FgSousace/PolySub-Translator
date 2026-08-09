@@ -50,6 +50,12 @@ class DeepLEngine(TranslationEngine):
             ]
         return self._request(list(texts), target_language, context=None)
 
+    def cancel(self) -> None:
+        # Closing the pool prevents another HTTP request. Depending on the OS,
+        # the current request may still finish before cooperative cancellation
+        # is observed by TranslationService.
+        self.session.close()
+
     def _request(self, texts: list[str], target_language: str, context: str | None) -> list[str]:
         target = TARGET_OVERRIDES.get(target_language.lower(), target_language.upper())
         payload: dict[str, object] = {

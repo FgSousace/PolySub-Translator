@@ -35,6 +35,47 @@ def main() -> None:
         _ = huggingface_hub
         return
 
+    if "--self-test-branding" in sys.argv:
+        from polysub.branding import AUTHOR, PRODUCT_NAME, REQUIRED_NOTICE
+
+        if PRODUCT_NAME != "PolySub Translator™" or AUTHOR != "fgSousace":
+            raise RuntimeError("Metadane marki PolySub Translator™ są nieprawidłowe.")
+        if not REQUIRED_NOTICE.startswith("Required Notice:"):
+            raise RuntimeError("Brakuje wymaganego oznaczenia licencyjnego.")
+        roots = [
+            Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])),
+            Path(__file__).resolve().parents[1],
+        ]
+        for filename in ("LICENSE", "NOTICE.txt"):
+            candidate = next(
+                (root / filename for root in roots if (root / filename).is_file()),
+                None,
+            )
+            if candidate is None:
+                raise RuntimeError(f"W pakiecie brakuje pliku {filename}.")
+            if "fgSousace" not in candidate.read_text(encoding="utf-8"):
+                raise RuntimeError(f"Plik {filename} nie zawiera oznaczenia autora.")
+        return
+
+    if "--self-test-amd-runtime" in sys.argv:
+        from polysub.amd_runtime import (
+            OFFICIALLY_SUPPORTED_WINDOWS_GPUS,
+            ROCM_SDK_URLS,
+            ROCM_TORCH_URLS,
+            amd_worker_script,
+        )
+
+        if "Radeon RX 9070 XT" not in OFFICIALLY_SUPPORTED_WINDOWS_GPUS:
+            raise RuntimeError("Lista AMD ROCm nie zawiera Radeona RX 9070 XT.")
+        urls = (*ROCM_SDK_URLS, *ROCM_TORCH_URLS)
+        if not all("repo.radeon.com" in url and "7.2.1" in url for url in urls):
+            raise RuntimeError("Konfigurator AMD nie wskazuje oficjalnych paczek ROCm 7.2.1.")
+        worker = amd_worker_script()
+        if not worker.is_file():
+            raise RuntimeError(f"W pakiecie brakuje workera AMD: {worker}")
+        compile(worker.read_text(encoding="utf-8"), str(worker), "exec")
+        return
+
     if "--self-test-subtitle-timing" in sys.argv:
         from polysub.subtitle_timing import (
             SubtitleTimingSettings,
@@ -177,9 +218,9 @@ def main() -> None:
         import torch
 
         cuda_version = getattr(torch.version, "cuda", None)
-        if not cuda_version or not str(cuda_version).startswith("12.6"):
+        if not cuda_version or not str(cuda_version).startswith("12.8"):
             raise RuntimeError(
-                f"Pakiet nie zawiera oczekiwanego środowiska CUDA 12.6: {cuda_version!r}."
+                f"Pakiet nie zawiera oczekiwanego środowiska CUDA 12.8: {cuda_version!r}."
             )
         torch_lib = Path(torch.__file__).resolve().parent / "lib"
         required_libraries = ("cublas64_12.dll", "cudnn64_9.dll")
@@ -216,8 +257,11 @@ def main() -> None:
             AppearanceSettings,
             AppearanceSettingsStore,
         )
-        from polysub.gui import PolySubApp
+        from polysub.gui import MODEL_LABEL_TO_ID, MODEL_NOT_READY_LABEL, PolySubApp
+        from polysub.model_downloads import model_status
+        from polysub.models import TranslationMode
         from polysub.subtitle_timing import SubtitleTimingMode
+        from polysub.translation_models import get_model_spec
 
         with TemporaryDirectory(prefix="polysub-appearance-test-") as temporary_directory:
             store = AppearanceSettingsStore(Path(temporary_directory) / "appearance.json")
@@ -237,6 +281,7 @@ def main() -> None:
                     app.progress_bar,
                     app.activity_log,
                     app.start_button,
+                    app.cancel_translation_button,
                     app.check_update_button,
                     app.device_combo,
                     app.refresh_devices_button,
@@ -247,7 +292,11 @@ def main() -> None:
                     app.timing_status_label,
                     app.model_combo,
                     app.model_manager_button,
+                    app.automatic_mode_checkbox,
+                    app.review_mode_checkbox,
+                    app.amd_runtime_button,
                     app.burn_button,
+                    app.about_button,
                     app.appearance_interface_combo,
                     app.appearance_theme_combo,
                 )
@@ -255,6 +304,26 @@ def main() -> None:
                     raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
                 if app.start_button.winfo_manager() != "grid":
                     raise RuntimeError("Przycisk rozpoczęcia nie jest przypięty do dolnego paska.")
+                if "Wyszukaj napisy" not in app.start_button.cget("text"):
+                    raise RuntimeError(
+                        "Pierwszy krok GUI nie prowadzi do wyboru napisów lub filmu."
+                    )
+                if app.mode_var.get():
+                    raise RuntimeError("Tryb tłumaczenia został zaznaczony bez zgody użytkownika.")
+                app.automatic_mode_checked.set(True)
+                app._select_translation_mode(TranslationMode.AUTOMATIC)
+                if (
+                    app.mode_var.get() != TranslationMode.AUTOMATIC.value
+                    or not app.automatic_mode_checked.get()
+                    or app.review_mode_checked.get()
+                ):
+                    raise RuntimeError("Wymagane checkboxy trybu nie są wzajemnie wykluczające.")
+                for label in app.model_combo.cget("values"):
+                    if label == MODEL_NOT_READY_LABEL:
+                        continue
+                    model_id = MODEL_LABEL_TO_ID.get(label)
+                    if model_id is None or not model_status(get_model_spec(model_id)).installed:
+                        raise RuntimeError("Główna lista pokazała model, który nie jest gotowy.")
                 if len(app._modern_nav_buttons) != 5:
                     raise RuntimeError("Nowy interfejs nie zawiera pięciu skrótów nawigacji.")
                 if set(app._content_sections) != {
@@ -282,6 +351,14 @@ def main() -> None:
                     for button in app.timing_profile_buttons.values()
                 ):
                     raise RuntimeError("Kafelki czasu nie zostały zablokowane podczas pracy.")
+                if any(
+                    checkbox.cget("state") != "disabled"
+                    for checkbox in (
+                        app.automatic_mode_checkbox,
+                        app.review_mode_checkbox,
+                    )
+                ):
+                    raise RuntimeError("Tryb tłumaczenia nie został zablokowany podczas pracy.")
                 app._lock_translation_settings(False)
                 app._select_timing_mode(SubtitleTimingMode.RECOMMENDED)
 
@@ -317,7 +394,7 @@ def main() -> None:
             from tkinter import messagebox
 
             messagebox.showerror(
-                "PolySub Translator — błąd uruchamiania",
+                "PolySub Translator™ — błąd uruchamiania",
                 f"Nie udało się uruchomić aplikacji:\n\n{exc}",
             )
         finally:

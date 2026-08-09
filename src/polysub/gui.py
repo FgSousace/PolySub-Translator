@@ -12,6 +12,14 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import __version__
+from .amd_runtime import (
+    AMD_ROCM_GUIDE_URL,
+    AMD_RUNTIME_TARGET_PREFIX,
+    OFFICIALLY_SUPPORTED_WINDOWS_GPUS,
+    ROCM_DRIVER_VERSION,
+    ROCM_VERSION,
+    install_amd_runtime,
+)
 from .appearance import (
     DEFAULT_INTERFACE,
     DEFAULT_THEME,
@@ -25,6 +33,8 @@ from .appearance import (
     ThemePalette,
     resolve_theme,
 )
+from .branding import ABOUT_TEXT, AUTHOR, COPYRIGHT, PRODUCT_NAME
+from .cancellation import CancellationToken, TranslationCancelled
 from .compute_devices import (
     AUTO_DEVICE_ID,
     AUTO_DEVICE_LABEL,
@@ -36,9 +46,9 @@ from .compute_devices import (
     resolve_compute_device,
 )
 from .detector import detect_language
-from .engines import DeepLEngine, create_local_engine
+from .engines import DeepLEngine, RocmWorkerEngine, create_local_engine
 from .languages import language_name, language_options, parse_language_option
-from .model_downloads import download_model, model_status
+from .model_downloads import model_status
 from .model_manager_window import ModelManagerWindow
 from .models import TranslationMode
 from .performance import DEFAULT_CPU_USAGE, cpu_allocation
@@ -79,6 +89,19 @@ ENGINE_LABELS = {
 
 MODEL_LABEL_TO_ID = {model.selection_label: model.id for model in MODEL_CATALOG}
 MODEL_ID_TO_LABEL = {model.id: model.selection_label for model in MODEL_CATALOG}
+MODEL_NOT_READY_LABEL = "Brak pobranych modeli — otwórz menedżer"
+
+SUPPORTED_INPUT_EXTENSIONS = {".srt", *VIDEO_EXTENSIONS}
+SUPPORTED_INPUT_PATTERN = " ".join(
+    f"*{extension}" for extension in sorted(SUPPORTED_INPUT_EXTENSIONS)
+)
+VIDEO_INPUT_PATTERN = " ".join(f"*{extension}" for extension in sorted(VIDEO_EXTENSIONS))
+INPUT_FILE_TYPES = (
+    ("Wszystkie obsługiwane napisy i filmy", SUPPORTED_INPUT_PATTERN),
+    ("Napisy SubRip", "*.srt"),
+    ("Pliki wideo", VIDEO_INPUT_PATTERN),
+    ("Wszystkie pliki", "*.*"),
+)
 
 SPEECH_MODEL_LABELS = {
     "Szybsze — Whisper small": "small",
@@ -158,7 +181,7 @@ class PolySubApp(tk.Tk):
         self._appearance_dialog: tk.Toplevel | None = None
         self._modern_nav_buttons: dict[str, ttk.Button] = {}
         self._content_sections: dict[str, tk.Widget] = {}
-        self.title("PolySub Translator")
+        self.title(PRODUCT_NAME)
         width, height = recommended_window_size(
             self.winfo_screenwidth(),
             self.winfo_screenheight(),
@@ -187,6 +210,10 @@ class PolySubApp(tk.Tk):
         self._device_detection_running = False
         self._model_manager_window: ModelManagerWindow | None = None
         self._timing_controls_locked = False
+        self._translation_cancel_token: CancellationToken | None = None
+        self._active_translation_engine = None
+        self._translation_running = False
+        self._amd_runtime_setup_running = False
         self._build_style()
         self._build_ui()
         self._apply_theme_to_widgets()
@@ -343,17 +370,25 @@ class PolySubApp(tk.Tk):
             foreground=[("active", palette.accent_hover)],
         )
         style.configure(
-            "Mode.TRadiobutton",
+            "Mode.TCheckbutton",
             background=palette.surface,
             foreground=palette.text,
             font=("Segoe UI", 11, "bold"),
             padding=8,
         )
         style.map(
-            "Mode.TRadiobutton",
+            "Mode.TCheckbutton",
             background=[("active", palette.surface)],
             foreground=[("active", palette.accent_hover)],
             indicatorcolor=[("selected", palette.accent)],
+        )
+        style.configure(
+            "Danger.TButton",
+            background=palette.danger,
+            foreground=palette.accent_text,
+            bordercolor=palette.danger,
+            font=("Segoe UI", 10, "bold"),
+            padding=(14, 11),
         )
         style.configure(
             "TCombobox",
@@ -468,7 +503,7 @@ class PolySubApp(tk.Tk):
             )
         ttk.Label(
             container,
-            text="PolySub Translator",
+            text=PRODUCT_NAME,
             style="HeroTitle.TLabel" if modern else "Title.TLabel",
         ).pack(anchor="w")
         ttk.Label(
@@ -515,6 +550,12 @@ class PolySubApp(tk.Tk):
             command=self._open_appearance_dialog,
         )
         self.appearance_button.grid(row=0, column=3, sticky="e", padx=(6, 0))
+        self.about_button = ttk.Button(
+            version_frame,
+            text="O programie",
+            command=self._show_about,
+        )
+        self.about_button.grid(row=0, column=4, sticky="e", padx=(6, 0))
 
         file_frame = ttk.LabelFrame(container, text="1. Napisy lub film", padding=14)
         file_frame.pack(fill="x")
@@ -525,13 +566,22 @@ class PolySubApp(tk.Tk):
             row=0, column=0, sticky="ew"
         )
         self.file_button = ttk.Button(
-            file_frame, text="Wybierz SRT lub film", command=self._choose_file
+            file_frame, text="Wybierz napisy lub film…", command=self._choose_file
         )
         self.file_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
+        self.file_details_var = tk.StringVar(
+            value="Obsługiwane wejście: napisy SRT oraz filmy MP4, MKV, MOV, AVI, M4V i WEBM."
+        )
+        ttk.Label(
+            file_frame,
+            textvariable=self.file_details_var,
+            style="Muted.TLabel",
+            wraplength=650,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(7, 0))
         ttk.Label(
             file_frame,
             text="Gdy film nie ma napisów:",
-        ).grid(row=1, column=0, sticky="e", pady=(10, 0), padx=(0, 8))
+        ).grid(row=2, column=0, sticky="e", pady=(10, 0), padx=(0, 8))
         self.speech_model_var = tk.StringVar(value="Dokładniejsze — Whisper medium")
         ttk.Combobox(
             file_frame,
@@ -539,7 +589,7 @@ class PolySubApp(tk.Tk):
             values=list(SPEECH_MODEL_LABELS),
             state="readonly",
             width=32,
-        ).grid(row=1, column=1, sticky="e", pady=(10, 0))
+        ).grid(row=2, column=1, sticky="e", pady=(10, 0))
 
         language_frame = ttk.LabelFrame(container, text="2. Języki", padding=14)
         language_frame.pack(fill="x", pady=12)
@@ -600,11 +650,11 @@ class PolySubApp(tk.Tk):
         model_row = ttk.Frame(engine_frame)
         model_row.pack(fill="x")
         model_row.columnconfigure(0, weight=1)
-        self.model_var = tk.StringVar(value=MODEL_ID_TO_LABEL[DEFAULT_MODEL_ID])
+        self.model_var = tk.StringVar(value=MODEL_NOT_READY_LABEL)
         self.model_combo = ttk.Combobox(
             model_row,
             textvariable=self.model_var,
-            values=list(MODEL_LABEL_TO_ID),
+            values=(MODEL_NOT_READY_LABEL,),
             state="readonly",
         )
         self.model_combo.grid(row=0, column=0, sticky="ew")
@@ -633,25 +683,35 @@ class PolySubApp(tk.Tk):
 
         mode_frame = ttk.LabelFrame(settings, text="4. Tryb tłumaczenia", padding=14)
         mode_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        self.mode_var = tk.StringVar(value=TranslationMode.AUTOMATIC.value)
-        ttk.Radiobutton(
+        self.mode_var = tk.StringVar(value="")
+        self.automatic_mode_checked = tk.BooleanVar(value=False)
+        self.review_mode_checked = tk.BooleanVar(value=False)
+        self.automatic_mode_checkbox = ttk.Checkbutton(
             mode_frame,
             text="⚡ Tłumacz automatycznie",
-            value=TranslationMode.AUTOMATIC.value,
-            variable=self.mode_var,
-            style="Mode.TRadiobutton",
-        ).pack(anchor="w")
+            variable=self.automatic_mode_checked,
+            command=lambda: self._select_translation_mode(TranslationMode.AUTOMATIC),
+            style="Mode.TCheckbutton",
+        )
+        self.automatic_mode_checkbox.pack(anchor="w")
         ttk.Label(mode_frame, text="Szybko, bez dodatkowych pytań.").pack(anchor="w", padx=28)
-        ttk.Radiobutton(
+        self.review_mode_checkbox = ttk.Checkbutton(
             mode_frame,
             text="🎯 Tłumacz z weryfikacją",
-            value=TranslationMode.REVIEW.value,
-            variable=self.mode_var,
-            style="Mode.TRadiobutton",
-        ).pack(anchor="w", pady=(10, 0))
+            variable=self.review_mode_checked,
+            command=lambda: self._select_translation_mode(TranslationMode.REVIEW),
+            style="Mode.TCheckbutton",
+        )
+        self.review_mode_checkbox.pack(anchor="w", pady=(10, 0))
         ttk.Label(mode_frame, text="Kontekst i edycja niejasnych kwestii.").pack(
             anchor="w", padx=28
         )
+        ttk.Label(
+            mode_frame,
+            text="Wymagane: zaznacz dokładnie jeden tryb przed rozpoczęciem.",
+            style="Muted.TLabel",
+            wraplength=360,
+        ).pack(anchor="w", pady=(10, 0))
 
         compute_frame = ttk.LabelFrame(
             container,
@@ -687,6 +747,25 @@ class PolySubApp(tk.Tk):
             textvariable=self.device_status_var,
             wraplength=820,
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(7, 0))
+        amd_row = ttk.Frame(compute_frame)
+        amd_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(9, 0))
+        amd_row.columnconfigure(0, weight=1)
+        self.amd_runtime_status_var = tk.StringVar(
+            value="AMD Radeon: opcjonalne, odizolowane środowisko ROCm dla Windows 11."
+        )
+        ttk.Label(
+            amd_row,
+            textvariable=self.amd_runtime_status_var,
+            style="Muted.TLabel",
+            wraplength=660,
+        ).grid(row=0, column=0, sticky="w")
+        self.amd_runtime_button = ttk.Button(
+            amd_row,
+            text="Skonfiguruj / sprawdź AMD",
+            command=self._configure_amd_runtime,
+            state="disabled" if self._amd_runtime_setup_running else "normal",
+        )
+        self.amd_runtime_button.grid(row=0, column=1, sticky="e", padx=(10, 0))
 
         cpu_frame = ttk.LabelFrame(
             container,
@@ -881,7 +960,9 @@ class PolySubApp(tk.Tk):
 
         self._build_activity_panel()
         self._build_action_bar()
+        self._refresh_model_choices()
         self._update_api_state()
+        self._refresh_primary_action()
         if modern:
             self.after_idle(lambda: self._set_modern_nav_selection("start"))
 
@@ -898,12 +979,12 @@ class PolySubApp(tk.Tk):
         ttk.Label(sidebar, text="PS", style="Brand.TLabel").pack(anchor="w")
         ttk.Label(
             sidebar,
-            text="PolySub Translator",
+            text=PRODUCT_NAME,
             style="Brand.TLabel",
         ).pack(anchor="w", pady=(2, 0))
         ttk.Label(
             sidebar,
-            text=f"Wersja {__version__}",
+            text=f"Wersja {__version__} • {AUTHOR}",
             style="SidebarMuted.TLabel",
         ).pack(anchor="w", pady=(2, 24))
 
@@ -1106,7 +1187,7 @@ class PolySubApp(tk.Tk):
 
         dialog = tk.Toplevel(self)
         self._appearance_dialog = dialog
-        dialog.title("Wygląd aplikacji — PolySub")
+        dialog.title(f"Wygląd aplikacji — {PRODUCT_NAME}")
         dialog.geometry("560x330")
         dialog.minsize(500, 300)
         dialog.transient(self)
@@ -1178,9 +1259,17 @@ class PolySubApp(tk.Tk):
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
         self._apply_theme_to_widgets(dialog)
 
+    def _show_about(self) -> None:
+        messagebox.showinfo(
+            f"O programie — {PRODUCT_NAME}",
+            f"{ABOUT_TEXT}\n\nWersja: {__version__}",
+            parent=self,
+        )
+
     def _capture_interface_state(self) -> dict[str, object]:
         variable_names = (
             "file_var",
+            "file_details_var",
             "speech_model_var",
             "source_var",
             "target_var",
@@ -1244,11 +1333,14 @@ class PolySubApp(tk.Tk):
             self.activity_log.configure(state="disabled")
 
         self._update_api_state()
+        self._sync_mode_checkboxes()
         self._update_cpu_usage_description()
         self._update_timing_description()
+        self._refresh_model_choices(MODEL_LABEL_TO_ID.get(str(values.get("model_var", ""))))
         self._refresh_model_status()
         self._restore_device_widgets()
         self._update_attach_button()
+        self._refresh_primary_action()
         if self._update_download_url:
             self.download_update_button.grid()
         self._update_appearance_description()
@@ -1304,9 +1396,30 @@ class PolySubApp(tk.Tk):
         if root is self and hasattr(self, "timing_profile_buttons"):
             self._update_timing_description()
 
-    def _selected_model(self) -> TranslationModelSpec:
-        model_id = MODEL_LABEL_TO_ID.get(self.model_var.get(), DEFAULT_MODEL_ID)
-        return get_model_spec(model_id)
+    def _installed_models(self) -> list[TranslationModelSpec]:
+        return [model for model in MODEL_CATALOG if model_status(model).installed]
+
+    def _refresh_model_choices(self, preferred_model_id: str | None = None) -> None:
+        if not hasattr(self, "model_combo"):
+            return
+        current_id = preferred_model_id or MODEL_LABEL_TO_ID.get(self.model_var.get())
+        installed = self._installed_models()
+        labels = [model.selection_label for model in installed]
+        self.model_combo.configure(values=labels or (MODEL_NOT_READY_LABEL,))
+        selected = next((model for model in installed if model.id == current_id), None)
+        if selected is None and installed:
+            selected = next(
+                (model for model in installed if model.id == DEFAULT_MODEL_ID),
+                installed[0],
+            )
+        self.model_var.set(selected.selection_label if selected else MODEL_NOT_READY_LABEL)
+
+    def _selected_model(self) -> TranslationModelSpec | None:
+        model_id = MODEL_LABEL_TO_ID.get(self.model_var.get())
+        if model_id is None:
+            return None
+        model = get_model_spec(model_id)
+        return model if model_status(model).installed else None
 
     def _model_selection_changed(self) -> None:
         self._refresh_model_status()
@@ -1315,6 +1428,12 @@ class PolySubApp(tk.Tk):
         if not hasattr(self, "model_status_var"):
             return
         model = self._selected_model()
+        if model is None:
+            self.model_status_var.set(
+                "Brak gotowego modelu lokalnego. Kliknij »Pobierz / usuń…«, "
+                "aby pobrać jeden z 20 modeli AI."
+            )
+            return
         status = model_status(model)
         source = parse_language_option(self.source_var.get())
         target = parse_language_option(self.target_var.get())
@@ -1341,7 +1460,7 @@ class PolySubApp(tk.Tk):
                 self._model_manager_window = None
         self._model_manager_window = ModelManagerWindow(
             self,
-            selected_model_id=self._selected_model().id,
+            selected_model_id=(self._selected_model() or get_model_spec(DEFAULT_MODEL_ID)).id,
             source_language=parse_language_option(self.source_var.get()),
             target_language=parse_language_option(self.target_var.get()),
             on_use=self._select_model,
@@ -1350,12 +1469,40 @@ class PolySubApp(tk.Tk):
         self._apply_theme_to_widgets(self._model_manager_window)
 
     def _select_model(self, model_id: str) -> None:
-        self.model_var.set(MODEL_ID_TO_LABEL.get(model_id, MODEL_ID_TO_LABEL[DEFAULT_MODEL_ID]))
+        self._refresh_model_choices(model_id)
         self._refresh_model_status()
 
     def _model_manager_closed(self) -> None:
         self._model_manager_window = None
+        self._refresh_model_choices()
         self._refresh_model_status()
+
+    def _select_translation_mode(self, mode: TranslationMode) -> None:
+        selected_var = (
+            self.automatic_mode_checked
+            if mode is TranslationMode.AUTOMATIC
+            else self.review_mode_checked
+        )
+        if selected_var.get():
+            self.mode_var.set(mode.value)
+            self.automatic_mode_checked.set(mode is TranslationMode.AUTOMATIC)
+            self.review_mode_checked.set(mode is TranslationMode.REVIEW)
+        else:
+            self.mode_var.set("")
+            self.automatic_mode_checked.set(False)
+            self.review_mode_checked.set(False)
+
+    def _sync_mode_checkboxes(self) -> None:
+        self.automatic_mode_checked.set(
+            self.mode_var.get() == TranslationMode.AUTOMATIC.value
+        )
+        self.review_mode_checked.set(self.mode_var.get() == TranslationMode.REVIEW.value)
+
+    def _selected_translation_mode(self) -> TranslationMode | None:
+        try:
+            return TranslationMode(self.mode_var.get())
+        except ValueError:
+            return None
 
     def _start_device_detection(self) -> None:
         if self._device_detection_running:
@@ -1367,6 +1514,82 @@ class PolySubApp(tk.Tk):
         )
         thread = threading.Thread(target=self._device_detection_worker, daemon=True)
         thread.start()
+
+    def _configure_amd_runtime(self) -> None:
+        if self._amd_runtime_setup_running:
+            return
+        if os.name != "nt":
+            messagebox.showinfo(
+                "AMD ROCm dla Windows",
+                "Automatyczny konfigurator jest przeznaczony dla 64-bitowego Windows 11.",
+                parent=self,
+            )
+            return
+        supported = "\n".join(f"• {name}" for name in OFFICIALLY_SUPPORTED_WINDOWS_GPUS)
+        detected_amd = [
+            device.name
+            for device in self._compute_devices
+            if device.kind == "gpu" and device.vendor == "AMD"
+        ]
+        detected = ", ".join(detected_amd) or "jeszcze nie wykryto karty AMD"
+        if not messagebox.askyesno(
+            "Skonfigurować akcelerację AMD ROCm?",
+            f"Wykryty sprzęt: {detected}\n\n"
+            f"PolySub utworzy osobne środowisko AMD ROCm {ROCM_VERSION}. "
+            "Pobieranie obejmuje kilka gigabajtów i wymaga:\n"
+            "• Windows 11 64-bit,\n"
+            "• Python 3.12 64-bit,\n"
+            f"• sterownik AMD Adrenalin {ROCM_DRIVER_VERSION},\n"
+            "• jednej z oficjalnie obsługiwanych kart:\n"
+            f"{supported}\n\n"
+            "Rozpocząć pobieranie z oficjalnego repozytorium AMD?",
+            parent=self,
+        ):
+            return
+        self._amd_runtime_setup_running = True
+        self.amd_runtime_button.configure(state="disabled", text="Konfigurowanie AMD…")
+        self.amd_runtime_status_var.set(
+            "Przygotowywanie AMD ROCm. Nie zamykaj programu podczas instalacji."
+        )
+        thread = threading.Thread(target=self._amd_runtime_setup_worker, daemon=True)
+        thread.start()
+
+    def _amd_runtime_setup_worker(self) -> None:
+        try:
+            runtime = install_amd_runtime(
+                status=lambda message: self.after(0, self._amd_runtime_setup_status, message)
+            )
+        except Exception as exc:
+            self.after(0, self._amd_runtime_setup_failed, str(exc))
+            return
+        self.after(0, self._amd_runtime_setup_finished, runtime.message)
+
+    def _amd_runtime_setup_status(self, message: str) -> None:
+        self.amd_runtime_status_var.set(message)
+        self.device_status_var.set(f"Konfiguracja AMD: {message}")
+
+    def _amd_runtime_setup_finished(self, message: str) -> None:
+        self._amd_runtime_setup_running = False
+        self.amd_runtime_button.configure(state="normal", text="Sprawdź ponownie AMD")
+        self.amd_runtime_status_var.set(message)
+        self._append_activity(f"AMD ROCm gotowe — {message}")
+        self._start_device_detection()
+        messagebox.showinfo(
+            "AMD ROCm jest gotowe",
+            f"{message}\n\nKarta pojawi się na liście jako backend ROCm. "
+            "Tryb Auto będzie mógł wybrać ją do lokalnego tłumaczenia.",
+            parent=self,
+        )
+
+    def _amd_runtime_setup_failed(self, message: str) -> None:
+        self._amd_runtime_setup_running = False
+        self.amd_runtime_button.configure(state="normal", text="Spróbuj ponownie AMD")
+        self.amd_runtime_status_var.set("Konfiguracja AMD nie została ukończona.")
+        messagebox.showerror(
+            "Nie udało się skonfigurować AMD ROCm",
+            f"{message}\n\nOficjalna instrukcja AMD:\n{AMD_ROCM_GUIDE_URL}",
+            parent=self,
+        )
 
     def _device_detection_worker(self) -> None:
         try:
@@ -1397,6 +1620,20 @@ class PolySubApp(tk.Tk):
         self.device_var.set(selected)
         self._selected_device_id = self._device_label_to_id[selected]
         self._update_device_description()
+        ready_amd = [
+            device.name
+            for device in devices
+            if device.vendor == "AMD" and "ROCm" in device.backend
+        ]
+        if ready_amd:
+            self.amd_runtime_status_var.set(
+                f"AMD ROCm gotowe: {', '.join(ready_amd)}."
+            )
+        elif any(device.vendor == "AMD" for device in devices):
+            self.amd_runtime_status_var.set(
+                "Radeon wykryty, ale akceleracja ROCm nie jest gotowa. "
+                "Kliknij »Skonfiguruj / sprawdź AMD«; do tego czasu program użyje CPU."
+            )
 
     def _device_detection_failed(self, _message: str) -> None:
         self._device_detection_running = False
@@ -1655,7 +1892,7 @@ class PolySubApp(tk.Tk):
     def _build_action_bar(self) -> None:
         action_frame = ttk.Frame(self, padding=(24, 10, 24, 16))
         action_frame.grid(row=2, column=self._content_column, sticky="ew")
-        action_frame.columnconfigure(0, weight=1)
+        action_frame.columnconfigure(0, weight=3)
         action_frame.columnconfigure(1, weight=1)
         self.attach_button = ttk.Button(
             action_frame,
@@ -1673,17 +1910,37 @@ class PolySubApp(tk.Tk):
         self.burn_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
         self.start_button = ttk.Button(
             action_frame,
-            text="Rozpocznij tłumaczenie",
-            command=self._start_translation,
+            text="Wyszukaj napisy w filmie lub wybierz plik",
+            command=self._primary_action,
             style="Primary.TButton",
         )
         self.start_button.grid(
             row=1,
             column=0,
-            columnspan=2,
             sticky="ew",
+            padx=(0, 6),
             pady=(8, 0),
         )
+        self.cancel_translation_button = ttk.Button(
+            action_frame,
+            text="Anuluj tłumaczenie",
+            command=self._cancel_translation,
+            state="disabled",
+            style="Danger.TButton",
+        )
+        self.cancel_translation_button.grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            padx=(6, 0),
+            pady=(8, 0),
+        )
+        ttk.Label(
+            action_frame,
+            text=f"{PRODUCT_NAME} • {COPYRIGHT} • wyłącznie użytek niekomercyjny",
+            style="Muted.TLabel",
+            anchor="center",
+        ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
     def _build_activity_panel(self) -> None:
         activity = ttk.LabelFrame(self, text="Postęp operacji", padding=(18, 10))
@@ -1866,14 +2123,42 @@ class PolySubApp(tk.Tk):
         self.status_var.set(message)
         self._append_activity(f"BŁĄD — {message}")
 
+    def _cancel_activity(self, message: str) -> None:
+        elapsed = time.monotonic() - self._activity_started_at
+        self._activity_active = False
+        if self._heartbeat_job is not None:
+            self.after_cancel(self._heartbeat_job)
+            self._heartbeat_job = None
+        self.progress_bar.stop()
+        self.stage_text.set("Tłumaczenie anulowane — postęp zapisano")
+        self.elapsed_text.set(f"Czas do anulowania: {format_elapsed(elapsed)}")
+        self.progress_text.set(message)
+        self.status_var.set(message)
+        self._append_activity(f"ANULOWANO — {message}")
+
+    def _primary_action(self) -> None:
+        if self.document is None or self.source_path is None:
+            self._choose_file()
+            return
+        self._start_translation()
+
+    def _refresh_primary_action(self) -> None:
+        if not hasattr(self, "start_button"):
+            return
+        if self._translation_running:
+            self.start_button.configure(text="Tłumaczenie w toku…", state="disabled")
+        elif self.document is None or self.source_path is None:
+            self.start_button.configure(
+                text="Wyszukaj napisy w filmie lub wybierz plik",
+                state="normal",
+            )
+        else:
+            self.start_button.configure(text="Rozpocznij tłumaczenie", state="normal")
+
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="Wybierz napisy lub film",
-            filetypes=[
-                ("Napisy SubRip", "*.srt"),
-                ("Pliki wideo", "*.mp4 *.m4v *.mkv *.mov *.avi *.webm"),
-                ("Wszystkie pliki", "*"),
-            ],
+            filetypes=INPUT_FILE_TYPES,
         )
         if not selected:
             return
@@ -1886,6 +2171,33 @@ class PolySubApp(tk.Tk):
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
         self.file_var.set(str(selected_path))
+        self.file_details_var.set(
+            f"Wybrano: {selected_path.name} • format "
+            f"{selected_path.suffix.lower() or 'bez rozszerzenia'} • trwa sprawdzanie pliku…"
+        )
+        self._refresh_primary_action()
+
+        if not selected_path.is_file():
+            self.file_details_var.set("Wybranego pliku nie ma już na dysku.")
+            messagebox.showerror(
+                "Nie znaleziono pliku",
+                f"Plik nie istnieje:\n{selected_path}",
+                parent=self,
+            )
+            return
+
+        if selected_path.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+            supported = ", ".join(sorted(SUPPORTED_INPUT_EXTENSIONS))
+            self.file_details_var.set(
+                f"Nieobsługiwany format {selected_path.suffix or '(brak)'}."
+            )
+            messagebox.showwarning(
+                "Nieobsługiwany typ pliku",
+                "Możesz wyświetlić i wybrać dowolny plik, ale tłumaczenie obsługuje "
+                f"obecnie: {supported}.\n\nWybrano: {selected_path.name}",
+                parent=self,
+            )
+            return
 
         if selected_path.suffix.lower() in VIDEO_EXTENSIONS:
             self._start_video_import(selected_path)
@@ -1938,12 +2250,18 @@ class PolySubApp(tk.Tk):
             determinate=True,
         )
         self._document_ready(document, subtitle_path, detected)
+        size_kib = subtitle_path.stat().st_size / 1024
+        self.file_details_var.set(
+            f"Napisy SRT gotowe • {len(document.cues):,} kwestii • "
+            f"{document.total_words:,} słów • {size_kib:.1f} KiB".replace(",", " ")
+        )
         self.file_button.configure(state="normal")
         self._finish_activity(f"Napisy gotowe do tłumaczenia: {subtitle_path.name}")
 
     def _subtitle_import_failed(self, message: str) -> None:
         self.file_button.configure(state="normal")
-        self.start_button.configure(state="normal")
+        self.file_details_var.set("Plik nie został wczytany. Sprawdź jego format i kodowanie.")
+        self._refresh_primary_action()
         self._update_attach_button()
         self._fail_activity("Nie udało się wczytać napisów")
         messagebox.showerror("Nie można wczytać pliku", message, parent=self)
@@ -2031,6 +2349,16 @@ class PolySubApp(tk.Tk):
             file_label=f"{video_path.name}  →  {result.subtitle_path.name}",
             status=f"{method}: {result.subtitle_path.name}",
         )
+        source_description = (
+            "wbudowana ścieżka napisów"
+            if result.method == "embedded"
+            else "napisy utworzone przez rozpoznawanie mowy"
+        )
+        self.file_details_var.set(
+            f"Film {video_path.suffix.upper().lstrip('.')} • {source_description} • "
+            f"{len(result.document.cues):,} kwestii • "
+            f"{result.document.total_words:,} słów".replace(",", " ")
+        )
         self._show_stage(
             4,
             f"{method}. Przygotowano {len(result.document.cues):,} kwestii.".replace(",", " "),
@@ -2041,7 +2369,8 @@ class PolySubApp(tk.Tk):
 
     def _video_import_failed(self, message: str) -> None:
         self.file_button.configure(state="normal")
-        self.start_button.configure(state="normal")
+        self.file_details_var.set("Nie udało się przygotować napisów z wybranego filmu.")
+        self._refresh_primary_action()
         self._fail_activity("Nie udało się przygotować filmu")
         messagebox.showerror("Import filmu nie powiódł się", message, parent=self)
 
@@ -2064,7 +2393,7 @@ class PolySubApp(tk.Tk):
         )
         self._set_progress(0, document.total_words)
         self.status_var.set(status)
-        self.start_button.configure(state="normal")
+        self._refresh_primary_action()
         self._refresh_model_status()
 
     def _update_api_state(self) -> None:
@@ -2084,7 +2413,10 @@ class PolySubApp(tk.Tk):
             self.api_entry.configure(state="disabled")
             self.device_combo.configure(state="disabled")
             self.refresh_devices_button.configure(state="disabled")
+            self.amd_runtime_button.configure(state="disabled")
             self.cpu_usage_combo.configure(state="disabled")
+            self.automatic_mode_checkbox.configure(state="disabled")
+            self.review_mode_checkbox.configure(state="disabled")
             for button in self.timing_profile_buttons.values():
                 button.configure(state="disabled", cursor="arrow")
             self._update_timing_description()
@@ -2095,7 +2427,12 @@ class PolySubApp(tk.Tk):
         self.refresh_devices_button.configure(
             state="disabled" if self._device_detection_running else "normal"
         )
+        self.amd_runtime_button.configure(
+            state="disabled" if self._amd_runtime_setup_running else "normal"
+        )
         self.cpu_usage_combo.configure(state="readonly")
+        self.automatic_mode_checkbox.configure(state="normal")
+        self.review_mode_checkbox.configure(state="normal")
         for button in self.timing_profile_buttons.values():
             button.configure(state="normal", cursor="hand2")
         self._update_timing_description()
@@ -2105,6 +2442,15 @@ class PolySubApp(tk.Tk):
         if self.document is None or self.source_path is None:
             messagebox.showwarning(
                 "Brak pliku", "Najpierw wybierz plik SRT albo film.", parent=self
+            )
+            return
+        mode = self._selected_translation_mode()
+        if mode is None:
+            messagebox.showwarning(
+                "Wybierz tryb tłumaczenia",
+                "Zaznacz jeden checkbox: »Tłumacz automatycznie« albo "
+                "»Tłumacz z weryfikacją«.",
+                parent=self,
             )
             return
         source = parse_language_option(self.source_var.get())
@@ -2131,6 +2477,15 @@ class PolySubApp(tk.Tk):
         local_model_source: Path | None = None
         if engine_kind == "local":
             local_model = self._selected_model()
+            if local_model is None:
+                messagebox.showwarning(
+                    "Brak pobranego modelu AI",
+                    "Główna lista pokazuje tylko modele pobrane i gotowe. "
+                    "Otwórz Menedżer modeli AI, pobierz model, a potem wybierz go z listy.",
+                    parent=self,
+                )
+                self._open_model_manager()
+                return
             if not local_model.supports_pair(source, target):
                 messagebox.showwarning(
                     "Model nie obsługuje tej pary",
@@ -2142,25 +2497,15 @@ class PolySubApp(tk.Tk):
                 return
             local_status = model_status(local_model)
             local_model_source = local_status.snapshot_path
-            if not local_status.installed:
-                model_note = f"Uwaga: {local_model.note}\n" if local_model.note else ""
-                resume_note = (
-                    "Na dysku jest nieukończone pobieranie, więc program je wznowi."
-                    if local_status.partial
-                    else "Model nie jest jeszcze zapisany na tym komputerze."
-                )
-                if not messagebox.askyesno(
-                    "Pobrać wybrany model AI?",
-                    f"{resume_note}\n\n"
-                    f"Model: {local_model.display_name}\n"
-                    f"Do pobrania: około {local_model.size_label}\n"
-                    f"Wymagania: {local_model.hardware_label}\n"
-                    f"Licencja: {local_model.license_name}\n"
-                    f"{model_note}\n"
-                    "Pobrać go teraz i po pobraniu automatycznie rozpocząć tłumaczenie?",
+            if not local_status.installed or local_model_source is None:
+                self._refresh_model_choices()
+                messagebox.showwarning(
+                    "Model nie jest gotowy",
+                    "Wybrany model nie ma kompletnego pliku na dysku. "
+                    "Dokończ pobieranie w Menedżerze modeli AI.",
                     parent=self,
-                ):
-                    return
+                )
+                return
 
         device_resolution = self._resolve_selected_device("translation")
         if (
@@ -2175,7 +2520,11 @@ class PolySubApp(tk.Tk):
         ):
             return
 
-        self.start_button.configure(state="disabled")
+        self._translation_running = True
+        self._translation_cancel_token = CancellationToken()
+        self._active_translation_engine = None
+        self._refresh_primary_action()
+        self.cancel_translation_button.configure(state="normal")
         self.file_button.configure(state="disabled")
         self._lock_translation_settings(True)
         self.attach_button.configure(state="disabled")
@@ -2183,7 +2532,6 @@ class PolySubApp(tk.Tk):
         self.translated_subtitle_path = None
         self.translated_target_language = None
         api_key = self.api_key_var.get()
-        mode = TranslationMode(self.mode_var.get())
         context_notes = self.context_text.get("1.0", "end").strip()
         cpu_usage_limit = self._selected_cpu_usage_limit()
         final_processing_stage = (
@@ -2220,6 +2568,7 @@ class PolySubApp(tk.Tk):
                 local_model_source,
                 device_resolution,
                 cpu_usage_limit,
+                self._translation_cancel_token,
             ),
             daemon=True,
         )
@@ -2238,8 +2587,10 @@ class PolySubApp(tk.Tk):
         local_model_source: Path | None,
         device_resolution: DeviceResolution,
         cpu_usage_limit: int,
+        cancellation: CancellationToken,
     ) -> None:
         try:
+            cancellation.raise_if_cancelled()
             if engine_kind == "local" and device_resolution.fallback_reason:
                 self.after(0, self._engine_status, device_resolution.fallback_reason)
             if engine_kind == "deepl":
@@ -2248,18 +2599,36 @@ class PolySubApp(tk.Tk):
                 if local_model is None:
                     raise RuntimeError("Nie wybrano lokalnego modelu AI.")
                 if local_model_source is None:
-                    local_model_source = download_model(
-                        local_model,
-                        status=lambda message: self.after(0, self._engine_status, message),
+                    raise RuntimeError(
+                        "Model nie jest pobrany. Otwórz Menedżer modeli AI i dokończ pobieranie."
                     )
-                    self.after(0, self._refresh_model_status)
-                engine = create_local_engine(
-                    local_model,
-                    model_source=local_model_source,
-                    device=device_resolution.runtime_device,
-                    status=lambda message: self.after(0, self._engine_status, message),
-                    cpu_usage_limit=cpu_usage_limit,
-                )
+                if device_resolution.runtime_device.startswith(AMD_RUNTIME_TARGET_PREFIX):
+                    device_index = int(
+                        device_resolution.runtime_device.removeprefix(
+                            AMD_RUNTIME_TARGET_PREFIX
+                        )
+                    )
+                    engine = RocmWorkerEngine(
+                        local_model,
+                        model_source=local_model_source,
+                        device_index=device_index,
+                        status=lambda message: self.after(
+                            0, self._engine_status, message
+                        ),
+                        cpu_usage_limit=cpu_usage_limit,
+                    )
+                else:
+                    engine = create_local_engine(
+                        local_model,
+                        model_source=local_model_source,
+                        device=device_resolution.runtime_device,
+                        status=lambda message: self.after(
+                            0, self._engine_status, message
+                        ),
+                        cpu_usage_limit=cpu_usage_limit,
+                    )
+            self._active_translation_engine = engine
+            cancellation.raise_if_cancelled()
             self.after(
                 0,
                 self._show_stage,
@@ -2285,10 +2654,59 @@ class PolySubApp(tk.Tk):
                     message,
                 ),
                 output_path=output if mode is TranslationMode.AUTOMATIC else None,
+                cancellation=cancellation,
             )
             self.after(0, self._translation_finished, result, output, mode, target)
+        except TranslationCancelled:
+            self.after(0, self._translation_cancelled)
         except Exception as exc:
-            self.after(0, self._translation_failed, str(exc))
+            if cancellation.is_cancelled:
+                self.after(0, self._translation_cancelled)
+            else:
+                self.after(0, self._translation_failed, str(exc))
+        finally:
+            if "engine" in locals() and isinstance(engine, RocmWorkerEngine):
+                engine.close()
+            self._active_translation_engine = None
+
+    def _cancel_translation(self) -> None:
+        token = self._translation_cancel_token
+        if not self._translation_running or token is None:
+            return
+        token.cancel()
+        engine = self._active_translation_engine
+        if engine is not None:
+            try:
+                engine.cancel()
+            except Exception:
+                pass
+        self.cancel_translation_button.configure(state="disabled")
+        message = (
+            "Anulowanie… bieżąca partia może najpierw dokończyć obliczenia. "
+            "Ukończone partie zostaną zachowane."
+        )
+        self.status_var.set(message)
+        self.progress_text.set(message)
+        self._append_activity("Zażądano anulowania tłumaczenia.")
+
+    def _reset_translation_state(self) -> None:
+        self._translation_running = False
+        self._translation_cancel_token = None
+        self._active_translation_engine = None
+        self.cancel_translation_button.configure(state="disabled")
+        self.file_button.configure(state="normal")
+        self._lock_translation_settings(False)
+        self._refresh_primary_action()
+
+    def _translation_cancelled(self) -> None:
+        self._reset_translation_state()
+        self._refresh_model_choices()
+        self._refresh_model_status()
+        self._update_attach_button()
+        self._cancel_activity(
+            "Tłumaczenie anulowano. Zapisano ukończone partie — następna próba "
+            "wznowi pracę od tego miejsca."
+        )
 
     def _engine_status(self, message: str) -> None:
         self._show_stage(1, message)
@@ -2320,9 +2738,10 @@ class PolySubApp(tk.Tk):
         mode: TranslationMode,
         target_language: str,
     ) -> None:
-        self.start_button.configure(state="normal")
-        self.file_button.configure(state="normal")
-        self._lock_translation_settings(False)
+        self._reset_translation_state()
+        self._refresh_model_choices(
+            MODEL_LABEL_TO_ID.get(self.model_var.get())
+        )
         if mode is TranslationMode.REVIEW:
             finished_message = (
                 f"Tłumaczenie gotowe — {len(result.review_items)} kwestii oznaczono."
@@ -2361,9 +2780,8 @@ class PolySubApp(tk.Tk):
         )
 
     def _translation_failed(self, message: str) -> None:
-        self.start_button.configure(state="normal")
-        self.file_button.configure(state="normal")
-        self._lock_translation_settings(False)
+        self._reset_translation_state()
+        self._refresh_model_choices()
         self._refresh_model_status()
         self._update_attach_button()
         self._fail_activity("Tłumaczenie przerwane z powodu błędu")
@@ -2654,7 +3072,7 @@ class ReviewWindow(tk.Toplevel):
         on_saved: Callable[[Path], None] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.title("Weryfikacja tłumaczenia — PolySub")
+        self.title(f"Weryfikacja tłumaczenia — {PRODUCT_NAME}")
         self.geometry("1180x720")
         self.minsize(900, 600)
         self.original = original
