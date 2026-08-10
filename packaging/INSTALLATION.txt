@@ -1,11 +1,11 @@
-POLYSUB TRANSLATOR™ 0.5.2 — INSTALACJA NA WINDOWS
+POLYSUB TRANSLATOR™ 0.5.3 — INSTALACJA NA WINDOWS
 ==========================================
 
 Autor: fgSousace
 Dozwolony użytek osobisty i niekomercyjny. Użytek komercyjny wymaga osobnej
 zgody autora. Pełne warunki znajdują się w LICENSE.txt i NOTICE.txt.
 
-1. Uruchom plik PolySub-Translator-Setup-0.5.2.exe.
+1. Uruchom plik PolySub-Translator-Setup-0.5.3.exe.
 2. Wybierz folder, w którym ma zostać zainstalowany program.
 3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
 4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator™.
@@ -99,6 +99,10 @@ OSTRZEŻENIE WINDOWS SMARTSCREEN
 
 Projekt nie ma jeszcze komercyjnego certyfikatu podpisu cyfrowego. Jeżeli Windows
 wyświetli ostrzeżenie, wybierz „Więcej informacji”, a następnie „Uruchom mimo to”.
+Pliki wydania są budowane bez UPX, skanowane Microsoft Defenderem na runnerze Windows
+(gdy usługa jest dostępna) i publikowane z sumami SHA-256. Jeżeli Defender pokaże nazwę
+konkretnego zagrożenia albo PUA, nie wyłączaj ochrony: sprawdź sumę pliku i zgłoś nazwę
+detekcji na stronie Issues do ponownej analizy.
 
 POMOC I AKTUALIZACJE
 --------------------

@@ -68,6 +68,14 @@ jobs:
         shell: pwsh
         run: .\scripts\build_windows.ps1 -SkipDependencyInstall
 
+      - name: Scan EXE and installer with Microsoft Defender
+        shell: pwsh
+        run: |
+          .\scripts\scan_windows_release.ps1 -Paths @(
+            ".\dist\PolySubTranslator\PolySubTranslator.exe",
+            ".\installer-output\PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe"
+          )
+
       - name: Test EXE — wersja
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--version"
@@ -254,4 +262,20 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) {
             throw "Nie udało się opublikować plików w GitHub Releases."
+          }
+
+      - name: Keep every release description version-specific
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Get-ChildItem ".\packaging\release-notes\v*.md" | ForEach-Object {
+            $tag = $_.BaseName
+            gh release view $tag --json tagName 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              gh release edit $tag --notes-file $_.FullName
+              if ($LASTEXITCODE -ne 0) {
+                throw "Nie udało się uporządkować opisu wydania $tag."
+              }
+            }
           }

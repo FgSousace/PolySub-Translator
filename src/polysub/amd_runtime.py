@@ -46,7 +46,13 @@ EMBEDDED_PYTHON_URL = (
 EMBEDDED_PYTHON_SHA256 = (
     "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 )
-GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+PIP_WHEEL_VERSION = "25.2"
+PIP_WHEEL_URL = (
+    "https://files.pythonhosted.org/packages/b7/3f/"
+    "945ef7ab14dc4f9d7f40288d2df998d1837ee0888ec3659c813487572faa/"
+    "pip-25.2-py3-none-any.whl"
+)
+PIP_WHEEL_SHA256 = "6d67a2b4e7f14d8b31b8b52648866fa717f45a1eb70e83002f4331d07e953717"
 RUNTIME_SCHEMA_VERSION = 3
 
 # Query the HIP runtime without initializing a specific adapter. On Ryzen CPUs
@@ -450,6 +456,12 @@ def install_amd_runtime(
         f"Radeon wykryty automatycznie — przygotowywanie ROCm {ROCM_VERSION} "
         f"dla {plan.target}…"
     )
+    status("Przygotowywanie narzędzi instalacyjnych dla AMD ROCm…")
+    _run_install_command(
+        _amd_build_backend_install_command(python_path),
+        status,
+        "Nie udało się przygotować setuptools i wheel dla AMD ROCm.",
+    )
     _run_install_command(
         _amd_torch_install_command(python_path, plan),
         status,
@@ -496,18 +508,14 @@ def install_amd_runtime(
     return result
 
 
-def _amd_torch_install_command(
-    python_path: Path,
-    plan: AmdRuntimePlan,
-) -> list[str]:
-    """Build AMD's documented pip command without rejecting ROCm's source shim.
+def _amd_build_backend_install_command(python_path: Path) -> list[str]:
+    """Install the backend required by AMD's source-only ``rocm`` shim.
 
-    AMD publishes the small ``rocm`` metapackage as ``rocm-<version>.tar.gz`` in
-    the multi-architecture index.  ``--only-binary :all:`` therefore makes the
-    otherwise official torch extra impossible to resolve and produces
-    ``No matching distribution found for rocm``.  Prefer wheels for the large
-    components, but allow that trusted AMD source package exactly as AMD's own
-    Windows installation command does.
+    AMD's multi-architecture repository publishes ``rocm`` as an sdist whose
+    ``pyproject.toml`` selects ``setuptools.build_meta``.  Embedded Python does
+    not ship setuptools, and pip's temporary build environment can fail to
+    expose that backend on Windows.  Install trusted binary build tools in the
+    isolated PolySub runtime before resolving the AMD dependency tree.
     """
 
     return [
@@ -520,6 +528,43 @@ def _amd_torch_install_command(
         "--progress-bar",
         "off",
         "--no-cache-dir",
+        "--only-binary",
+        ":all:",
+        "--index-url",
+        "https://pypi.org/simple",
+        "setuptools>=70.2,<82",
+        "wheel>=0.44,<1",
+    ]
+
+
+def _amd_torch_install_command(
+    python_path: Path,
+    plan: AmdRuntimePlan,
+) -> list[str]:
+    """Build AMD's documented pip command without rejecting ROCm's source shim.
+
+    AMD publishes the small ``rocm`` metapackage as ``rocm-<version>.tar.gz`` in
+    the multi-architecture index.  ``--only-binary :all:`` therefore makes the
+    otherwise official torch extra impossible to resolve and produces
+    ``No matching distribution found for rocm``.  Prefer wheels for the large
+    components, but allow that trusted AMD source package exactly as AMD's own
+    Windows installation command does.  Build isolation is disabled only for
+    this private runtime after a compatible ``setuptools.build_meta`` backend
+    has been installed explicitly above.  This avoids pip's
+    ``BackendUnavailable`` failure in the Windows embedded distribution.
+    """
+
+    return [
+        str(python_path),
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--disable-pip-version-check",
+        "--progress-bar",
+        "off",
+        "--no-cache-dir",
+        "--no-build-isolation",
         "--prefer-binary",
         "--index-url",
         ROCM_INDEX_URL,
@@ -580,14 +625,22 @@ def _configure_embedded_python_paths(runtime_dir: Path) -> None:
 def _bootstrap_embedded_pip(runtime_dir: Path, status: StatusCallback) -> None:
     downloads = runtime_dir.parent / "amd-runtime-downloads"
     downloads.mkdir(parents=True, exist_ok=True)
-    get_pip = downloads / "get-pip.py"
-    _download_file(GET_PIP_URL, get_pip, status)
-    status("Uruchamianie instalatora pakietów w prywatnym środowisku AMD…")
-    _run_install_command(
-        [str(amd_runtime_python()), str(get_pip), "--disable-pip-version-check"],
+    pip_wheel = downloads / f"pip-{PIP_WHEEL_VERSION}-py3-none-any.whl"
+    _download_file(
+        PIP_WHEEL_URL,
+        pip_wheel,
         status,
-        "Nie udało się przygotować pip w środowisku AMD.",
+        expected_sha256=PIP_WHEEL_SHA256,
     )
+    status("Przygotowywanie instalatora pakietów w prywatnym środowisku AMD…")
+    site_packages = runtime_dir / "Lib" / "site-packages"
+    try:
+        with zipfile.ZipFile(pip_wheel) as archive:
+            archive.extractall(site_packages)
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise AmdRuntimeError(f"Nie udało się przygotować pip w środowisku AMD: {exc}") from exc
+    if not _embedded_pip_ready(amd_runtime_python()):
+        raise AmdRuntimeError("Pip z oficjalnego, zweryfikowanego koła nie uruchamia się.")
 
 
 def _embedded_pip_ready(python_path: Path) -> bool:

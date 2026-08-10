@@ -80,6 +80,7 @@ def main() -> None:
             EMBEDDED_PYTHON_URL,
             ROCM_INDEX_URL,
             ROCM_VERSION,
+            _amd_build_backend_install_command,
             _amd_torch_install_command,
             amd_worker_environment,
             amd_worker_script,
@@ -96,8 +97,19 @@ def main() -> None:
         if "[device-gfx1201]" not in plan.torch_requirement:
             raise RuntimeError("PyTorch AMD nie został ograniczony do architektury RX 9070 XT.")
         install_command = _amd_torch_install_command(Path("python.exe"), plan)
-        if "--only-binary" in install_command or "--prefer-binary" not in install_command:
+        if (
+            "--only-binary" in install_command
+            or "--prefer-binary" not in install_command
+            or "--no-build-isolation" not in install_command
+        ):
             raise RuntimeError("Instalator AMD ponownie blokuje źródłowy pakiet rocm.")
+        backend_command = _amd_build_backend_install_command(Path("python.exe"))
+        if (
+            "setuptools>=70.2,<82" not in backend_command
+            or "wheel>=0.44,<1" not in backend_command
+            or "--only-binary" not in backend_command
+        ):
+            raise RuntimeError("Instalator AMD nie przygotowuje backendu setuptools.build_meta.")
         compile(AMD_GPU_INVENTORY_CODE, "<amd-gpu-inventory>", "exec")
         compile(AMD_GPU_PROBE_CODE, "<amd-gpu-probe>", "exec")
         masked_environment = amd_worker_environment(1)

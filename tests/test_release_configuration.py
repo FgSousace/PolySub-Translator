@@ -18,13 +18,20 @@ def test_version_is_consistent_in_python_project_and_installer() -> None:
     installer = (PROJECT_ROOT / "packaging" / "PolySubTranslator.iss").read_text(
         encoding="utf-8"
     )
+    version_info = (PROJECT_ROOT / "packaging" / "version_info.txt").read_text(
+        encoding="utf-8"
+    )
     installer_version = re.search(r'#define MyAppVersion "([^"]+)"', installer)
+    numeric_version = ", ".join(__version__.split(".")) + ", 0"
 
     assert project["project"]["version"] == __version__
-    assert __version__ == "0.5.2"
+    assert __version__ == "0.5.3"
     assert installer_version is not None
     assert installer_version.group(1) == __version__
     assert "OutputBaseFilename=PolySub-Translator-Setup-{#MyAppVersion}" in installer
+    assert f"filevers=({numeric_version})" in version_info
+    assert f"prodvers=({numeric_version})" in version_info
+    assert f"StringStruct(u'FileVersion', u'{__version__}')" in version_info
 
 
 def test_windows_release_assets_include_the_application_version() -> None:
@@ -34,6 +41,56 @@ def test_windows_release_assets_include_the_application_version() -> None:
 
     assert "PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe" in workflow
     assert "PolySub-Translator-Installer-$env:POLYSUB_VERSION.zip" in workflow
+
+
+def test_windows_package_avoids_upx_and_scans_release_with_defender() -> None:
+    spec = (PROJECT_ROOT / "packaging" / "PolySubTranslator.spec").read_text(
+        encoding="utf-8"
+    )
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "build-windows.yml").read_text(
+        encoding="utf-8"
+    )
+    scanner = (PROJECT_ROOT / "scripts" / "scan_windows_release.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "upx=True" not in spec
+    assert spec.count("upx=False") == 2
+    assert "scan_windows_release.ps1" in workflow
+    assert "-DisableRemediation" in scanner
+    assert "MpCmdRun.exe" in scanner
+
+
+def test_historical_release_notes_are_separate_and_version_specific() -> None:
+    notes_dir = PROJECT_ROOT / "packaging" / "release-notes"
+    notes = sorted(notes_dir.glob("v*.md"))
+    expected = {f"v0.4.{minor}" for minor in range(1, 10)} | {"v0.5.0", "v0.5.1", "v0.5.2"}
+
+    assert {path.stem for path in notes} == expected
+    for path in notes:
+        body = path.read_text(encoding="utf-8")
+        headings = re.findall(r"^## PolySub Translator (\d+\.\d+\.\d+)$", body, re.MULTILINE)
+        assert headings == [path.stem.removeprefix("v")]
+        assert "Wcześniej dodane" not in body
+        assert "Wcześniej poprawione" not in body
+
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "build-windows.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "Keep every release description version-specific" in workflow
+    assert "gh release edit $tag --notes-file" in workflow
+
+    current_body = (PROJECT_ROOT / "packaging" / "RELEASE_NOTES.md").read_text(
+        encoding="utf-8"
+    )
+    current_headings = re.findall(
+        r"^## PolySub Translator (\d+\.\d+\.\d+)$",
+        current_body,
+        re.MULTILINE,
+    )
+    assert current_headings == [__version__]
+    assert "Wcześniej dodane" not in current_body
+    assert "Wcześniej poprawione" not in current_body
 
 
 def test_cli_accepts_every_catalog_model() -> None:

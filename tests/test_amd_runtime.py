@@ -1,3 +1,4 @@
+import zipfile
 from pathlib import Path
 
 import polysub.amd_runtime as amd_runtime
@@ -195,9 +196,52 @@ def test_rocm_install_command_allows_amds_source_metapackage(tmp_path: Path) -> 
     command = amd_runtime._amd_torch_install_command(tmp_path / "python.exe", plan)
 
     assert "--only-binary" not in command
+    assert "--no-build-isolation" in command
     assert "--prefer-binary" in command
     assert command[command.index("--index-url") + 1] == amd_runtime.ROCM_INDEX_URL
     assert command[-1] == plan.torch_requirement
+
+
+def test_rocm_build_backend_is_installed_from_binary_wheels(tmp_path: Path) -> None:
+    command = amd_runtime._amd_build_backend_install_command(tmp_path / "python.exe")
+
+    assert command[0] == str(tmp_path / "python.exe")
+    assert command[command.index("--only-binary") + 1] == ":all:"
+    assert command[command.index("--index-url") + 1] == "https://pypi.org/simple"
+    assert "setuptools>=70.2,<82" in command
+    assert "wheel>=0.44,<1" in command
+
+
+def test_embedded_pip_uses_a_pinned_wheel_instead_of_downloaded_script(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_dir = tmp_path / "runtime"
+    site_packages = runtime_dir / "Lib" / "site-packages"
+    site_packages.mkdir(parents=True)
+    downloads: list[tuple[str, Path, str | None]] = []
+
+    def fake_download(url, destination, _status, *, expected_sha256=None):
+        downloads.append((url, destination, expected_sha256))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(destination, "w") as archive:
+            archive.writestr("pip/__init__.py", "__version__ = '25.2'\n")
+
+    monkeypatch.setattr(amd_runtime, "_download_file", fake_download)
+    monkeypatch.setattr(amd_runtime, "_embedded_pip_ready", lambda _path: True)
+    monkeypatch.setattr(amd_runtime, "amd_runtime_python", lambda: runtime_dir / "python.exe")
+
+    amd_runtime._bootstrap_embedded_pip(runtime_dir, lambda _message: None)
+
+    assert downloads == [
+        (
+            amd_runtime.PIP_WHEEL_URL,
+            tmp_path / "amd-runtime-downloads" / "pip-25.2-py3-none-any.whl",
+            amd_runtime.PIP_WHEEL_SHA256,
+        )
+    ]
+    assert (site_packages / "pip" / "__init__.py").is_file()
+    assert "get-pip.py" not in amd_runtime.PIP_WHEEL_URL
 
 
 def test_automatic_rocm_setup_repairs_a_previous_failed_install(
@@ -248,10 +292,13 @@ def test_automatic_rocm_setup_repairs_a_previous_failed_install(
     result = amd_runtime.install_amd_runtime(("AMD Radeon RX 9070 XT",))
 
     assert result.ready
-    assert len(commands) == 2
-    assert "--only-binary" not in commands[0]
-    assert commands[0][-1] == "torch[device-gfx1201]==2.12.0+rocm7.14.0"
-    assert "transformers>=4.55.5,<6" in commands[1]
+    assert len(commands) == 3
+    assert "setuptools>=70.2,<82" in commands[0]
+    assert "wheel>=0.44,<1" in commands[0]
+    assert "--no-build-isolation" in commands[1]
+    assert "--only-binary" not in commands[1]
+    assert commands[1][-1] == "torch[device-gfx1201]==2.12.0+rocm7.14.0"
+    assert "transformers>=4.55.5,<6" in commands[2]
 
 
 def test_mixed_supported_radeons_use_device_all() -> None:

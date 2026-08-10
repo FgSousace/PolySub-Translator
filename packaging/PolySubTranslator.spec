@@ -84,7 +84,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     version=str(PROJECT_ROOT / "packaging" / "version_info.txt"),
@@ -95,7 +95,7 @@ app = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="PolySubTranslator",
 )
