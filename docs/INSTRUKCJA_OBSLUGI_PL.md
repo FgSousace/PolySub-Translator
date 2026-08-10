@@ -1,13 +1,13 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.5.0 • autor: fgSousace • użytek niekomercyjny**
+**Wersja 0.5.1 • autor: fgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
 
 ## 1. Instalacja
 
-1. Pobierz `PolySub-Translator-Setup.exe` z oficjalnej strony GitHub Releases.
+1. Pobierz `PolySub-Translator-Setup-0.5.1.exe` z oficjalnej strony GitHub Releases.
 2. Uruchom instalator, wybierz folder i kliknij **Instaluj**.
 3. Przy pierwszym uruchomieniu otwórz **Pobierz / usuń…** i pobierz co najmniej
    jeden model lokalny albo wybierz silnik DeepL i wpisz swój klucz API.
@@ -77,7 +77,8 @@ model nie może zostać przypadkowo uruchomiony.
   Niczego nie trzeba klikać ani instalować ręcznie. Po wykryciu zgodnej karty
   program sam pobiera własne środowisko Python i właściwy pakiet AMD ROCm 7.14,
   po czym wykonuje prawdziwe obliczenie testowe na GPU. W czasie przygotowania
-  można korzystać z bezpiecznej drogi CPU.
+  można korzystać z bezpiecznej drogi CPU. Gdy Ryzen udostępnia dodatkowe iGPU,
+  program automatycznie pomija je i izoluje właściwą kartę dyskretną.
 - **CPU Intel/AMD:** zawsze dostępna droga awaryjna. Ustawienie 100% przekazuje
   modelowi wszystkie logiczne wątki, ale nie obniża jakości.
 
@@ -105,7 +106,8 @@ Po przetłumaczeniu napisów filmu możesz wybrać:
   lecz backend albo sterownik nie przeszedł testu. Opis pod listą podaje powód.
 - **RX 9070 XT używa CPU:** zostaw program uruchomiony do zakończenia automatycznego
   pobierania. Jeżeli test GPU nadal nie przechodzi, zaktualizuj Windows 11 do 25H2
-  i sterownik AMD; własny Python nie jest wymagany.
+  i sterownik AMD; własny Python nie jest wymagany. Dokładny powód znajduje się w
+  `%LOCALAPPDATA%\PolySub Translator\amd-runtime-diagnostics.log`.
 - **Napisy zniknęły w VLC:** włącz ścieżkę w menu **Napisy** albo użyj
   opcji trwałego wypalenia.
 - **Przycisk tłumaczenia nie startuje:** wybierz plik, gotowy model/język i zaznacz

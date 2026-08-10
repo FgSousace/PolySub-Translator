@@ -31,6 +31,19 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      - name: Read application version
+        shell: pwsh
+        run: |
+          $version = python -c `
+            "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
+            throw "Nie udało się odczytać wersji aplikacji."
+          }
+          "POLYSUB_VERSION=$version" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Encoding utf8 `
+            -Append
+
       - name: Install Python dependencies
         shell: pwsh
         run: |
@@ -98,7 +111,8 @@ jobs:
       - name: Install, test and uninstall Setup.exe
         shell: pwsh
         run: |
-          $installer = (Resolve-Path ".\installer-output\PolySub-Translator-Setup.exe").Path
+          $installerName = "PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe"
+          $installer = (Resolve-Path ".\installer-output\$installerName").Path
           $installDir = Join-Path `
             $env:RUNNER_TEMP `
             ("PolySub-Install-Test-" + [guid]::NewGuid().ToString("N"))
@@ -156,19 +170,21 @@ jobs:
       - name: Create and test installer ZIP
         shell: pwsh
         run: |
-          $packageDir = ".\installer-output\PolySub-Translator-Installer"
+          $installerName = "PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe"
+          $zipName = "PolySub-Translator-Installer-$env:POLYSUB_VERSION.zip"
+          $packageDir = ".\installer-output\PolySub-Translator-Installer-$env:POLYSUB_VERSION"
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
-          Copy-Item ".\installer-output\PolySub-Translator-Setup.exe" (Join-Path $packageDir "PolySub-Translator-Setup.exe")
+          Copy-Item ".\installer-output\$installerName" (Join-Path $packageDir $installerName)
           Copy-Item ".\packaging\INSTALLATION.txt" (Join-Path $packageDir "README.txt")
           Copy-Item ".\docs\INSTRUKCJA_OBSLUGI_PL.md" (Join-Path $packageDir "INSTRUKCJA_OBSLUGI.md")
           Copy-Item ".\LICENSE" (Join-Path $packageDir "LICENSE.txt")
           Copy-Item ".\NOTICE.txt" (Join-Path $packageDir "NOTICE.txt")
-          Compress-Archive -Path "$packageDir\*" -DestinationPath ".\installer-output\PolySub-Translator-Installer.zip"
+          Compress-Archive -Path "$packageDir\*" -DestinationPath ".\installer-output\$zipName"
 
           $testDir = Join-Path $env:RUNNER_TEMP "PolySub-Installer-Zip-Test"
-          Expand-Archive -Path ".\installer-output\PolySub-Translator-Installer.zip" -DestinationPath $testDir -Force
+          Expand-Archive -Path ".\installer-output\$zipName" -DestinationPath $testDir -Force
           foreach ($requiredFile in @(
-            "PolySub-Translator-Setup.exe",
+            $installerName,
             "README.txt",
             "INSTRUKCJA_OBSLUGI.md",
             "LICENSE.txt",
@@ -182,19 +198,9 @@ jobs:
       - name: Prepare release files
         shell: pwsh
         run: |
-          $version = python -c `
-            "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
-            throw "Nie udało się odczytać wersji aplikacji."
-          }
-          "POLYSUB_VERSION=$version" | Out-File `
-            -FilePath $env:GITHUB_ENV `
-            -Encoding utf8 `
-            -Append
-
           $releaseFiles = @(
-            ".\installer-output\PolySub-Translator-Setup.exe",
-            ".\installer-output\PolySub-Translator-Installer.zip"
+            ".\installer-output\PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe",
+            ".\installer-output\PolySub-Translator-Installer-$env:POLYSUB_VERSION.zip"
           )
           $hashes = foreach ($file in $releaseFiles) {
             $hash = Get-FileHash -Algorithm SHA256 $file
@@ -209,8 +215,8 @@ jobs:
         with:
           name: PolySub-Translator-Windows
           path: |
-            installer-output/PolySub-Translator-Setup.exe
-            installer-output/PolySub-Translator-Installer.zip
+            installer-output/PolySub-Translator-Setup-*.exe
+            installer-output/PolySub-Translator-Installer-*.zip
             installer-output/SHA256SUMS.txt
           if-no-files-found: error
           compression-level: 0
@@ -223,8 +229,8 @@ jobs:
         run: |
           $tag = "v$env:POLYSUB_VERSION"
           $assets = @(
-            ".\installer-output\PolySub-Translator-Setup.exe",
-            ".\installer-output\PolySub-Translator-Installer.zip",
+            ".\installer-output\PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe",
+            ".\installer-output\PolySub-Translator-Installer-$env:POLYSUB_VERSION.zip",
             ".\installer-output\SHA256SUMS.txt"
           )
 

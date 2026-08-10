@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..amd_runtime import amd_runtime_python, amd_worker_pythonpath, amd_worker_script
+from ..amd_runtime import (
+    amd_runtime_python,
+    amd_worker_environment,
+    amd_worker_pythonpath,
+    amd_worker_script,
+)
 from ..translation_models import TranslationModelSpec
 from .base import TranslationEngine, TranslationEngineError
 
@@ -37,9 +41,12 @@ class RocmWorkerEngine(TranslationEngine):
                 "Brakuje kompletnego środowiska AMD ROCm albo pliku workera. "
                 "Uruchom ponownie aplikację; PolySub przygotuje je automatycznie."
             )
-        environment = os.environ.copy()
+        environment = amd_worker_environment(device_index)
         environment["PYTHONPATH"] = str(pythonpath)
-        environment.setdefault("TORCH_BLAS_PREFER_HIPBLASLT", "1")
+        self._status(
+            f"AMD ROCm: izolowanie urządzenia HIP {max(int(device_index), 0)} "
+            "i uruchamianie go jako cuda:0…"
+        )
         try:
             self._process = subprocess.Popen(
                 [str(python_path), "-u", str(worker)],
@@ -60,7 +67,9 @@ class RocmWorkerEngine(TranslationEngine):
                 "command": "init",
                 "model_id": model.id,
                 "model_source": str(model_source),
-                "device_index": max(int(device_index), 0),
+                # HIP_VISIBLE_DEVICES masks the Ryzen iGPU and remaps the
+                # selected discrete Radeon to cuda:0 inside the worker.
+                "device_index": 0,
                 "cpu_usage_limit": cpu_usage_limit,
             }
         )

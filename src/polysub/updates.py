@@ -9,7 +9,7 @@ import requests
 
 RELEASE_API_URL = "https://api.github.com/repos/FgSousace/PolySub-Translator/releases/latest"
 RELEASE_PAGE_URL = "https://github.com/FgSousace/PolySub-Translator/releases/latest"
-INSTALLER_ASSET_NAME = "PolySub-Translator-Setup.exe"
+LEGACY_INSTALLER_ASSET_NAME = "PolySub-Translator-Setup.exe"
 VERSION_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
 
 
@@ -75,11 +75,24 @@ def check_for_updates(
     installer_url = release_url
     assets = payload.get("assets", [])
     if isinstance(assets, list):
-        for asset in assets:
-            if not isinstance(asset, dict) or asset.get("name") != INSTALLER_ASSET_NAME:
+        preferred_names = (
+            f"PolySub-Translator-Setup-{latest_version}.exe",
+            LEGACY_INSTALLER_ASSET_NAME,
+        )
+        for preferred_name in preferred_names:
+            matching_asset = next(
+                (
+                    asset
+                    for asset in assets
+                    if isinstance(asset, dict) and asset.get("name") == preferred_name
+                ),
+                None,
+            )
+            if matching_asset is None:
                 continue
             installer_url = (
-                _trusted_github_url(asset.get("browser_download_url")) or release_url
+                _trusted_github_url(matching_asset.get("browser_download_url"))
+                or release_url
             )
             break
 

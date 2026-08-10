@@ -22,6 +22,7 @@ import sys
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .compute_devices import ComputeDevice
@@ -46,21 +47,49 @@ EMBEDDED_PYTHON_SHA256 = (
     "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 )
 GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
-RUNTIME_SCHEMA_VERSION = 2
+RUNTIME_SCHEMA_VERSION = 3
 
-AMD_GPU_PROBE_CODE = (
-    "import json, torch; "
-    "ok=bool(torch.cuda.is_available()); "
-    "count=torch.cuda.device_count() if ok else 0; "
-    "devices=[torch.cuda.get_device_name(i) for i in range(count)]; "
-    "architectures=[str(getattr(torch.cuda.get_device_properties(i), "
-    "'gcnArchName', '')) for i in range(count)]; "
-    "a=torch.ones((64,64),device='cuda:0') if count else None; "
-    "value=float((a@a)[0,0].item()) if count else None; "
-    "torch.cuda.synchronize() if count else None; "
-    "print(json.dumps({'available':ok,'hip':str(torch.version.hip or ''),"
-    "'devices':devices,'architectures':architectures,'value':value}))"
-)
+# Query the HIP runtime without initializing a specific adapter. On Ryzen CPUs
+# with an iGPU, Windows ROCm can enumerate that iGPU before the discrete Radeon.
+AMD_GPU_INVENTORY_CODE = """
+import json
+import torch
+
+try:
+    count = max(int(torch._C._cuda_getDeviceCount()), 0)
+except Exception:
+    count = 0
+print(json.dumps({
+    "hip": str(torch.version.hip or ""),
+    "count": count,
+}))
+"""
+
+# This code runs once per physical HIP index with HIP_VISIBLE_DEVICES set. The
+# selected adapter therefore becomes cuda:0 even when a Ryzen iGPU originally
+# occupied index 0 and the RX 9070 XT was index 1.
+AMD_GPU_PROBE_CODE = """
+import json
+import torch
+
+try:
+    count = max(int(torch._C._cuda_getDeviceCount()), 0)
+except Exception:
+    count = 0
+name = torch.cuda.get_device_name(0) if count else ""
+properties = torch.cuda.get_device_properties(0) if count else None
+architecture = str(getattr(properties, "gcnArchName", ""))
+matrix = torch.ones((64, 64), device="cuda:0") if count else None
+value = float((matrix @ matrix)[0, 0].item()) if count else None
+torch.cuda.synchronize(0) if count else None
+print(json.dumps({
+    "available": bool(count),
+    "hip": str(torch.version.hip or ""),
+    "name": str(name),
+    "architecture": architecture,
+    "value": value,
+}))
+"""
 
 # Current Windows targets published by AMD for Radeon/Ryzen graphics. Exact
 # model-to-target selection keeps the download smaller than device-all.
@@ -117,6 +146,7 @@ class AmdRuntimeStatus:
     hip_version: str | None = None
     devices: tuple[str, ...] = ()
     architectures: tuple[str, ...] = ()
+    runtime_indices: tuple[int, ...] = ()
     target: str | None = None
     message: str = ""
 
@@ -135,6 +165,23 @@ def amd_runtime_python() -> Path:
 
 def amd_runtime_manifest() -> Path:
     return amd_runtime_directory() / "polysub-runtime.json"
+
+
+def amd_runtime_log_path() -> Path:
+    return amd_runtime_directory().parent / "amd-runtime-diagnostics.log"
+
+
+def write_amd_runtime_diagnostic(message: str) -> None:
+    """Persist setup/probe details so an automatic failure is never silent."""
+
+    try:
+        path = amd_runtime_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+        with path.open("a", encoding="utf-8") as output:
+            output.write(f"[{timestamp}] {message.strip()}\n")
+    except OSError:
+        pass
 
 
 def infer_amd_gfx_target(gpu_name: str) -> str | None:
@@ -198,71 +245,114 @@ def probe_amd_runtime(*, timeout: float = 45.0) -> AmdRuntimeStatus:
             target=target,
             message="Automatyczne środowisko AMD ROCm nie jest jeszcze zainstalowane.",
         )
-    try:
-        completed = subprocess.run(
-            [str(python_path), "-c", AMD_GPU_PROBE_CODE],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env=_amd_worker_environment(),
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return AmdRuntimeStatus(
-            installed=True,
-            ready=False,
-            python_path=python_path,
-            target=target,
-            message=f"Nie udało się sprawdzić środowiska AMD ROCm: {exc}",
-        )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()[-900:]
+    inventory, inventory_error = _run_amd_json_command(
+        python_path,
+        AMD_GPU_INVENTORY_CODE,
+        timeout=max(min(timeout, 60.0), 10.0),
+        environment=amd_worker_environment(),
+    )
+    if inventory is None:
         return AmdRuntimeStatus(
             installed=True,
             ready=False,
             python_path=python_path,
             target=target,
             message=(
-                "Środowisko AMD ROCm nie przeszło testu prawdziwych obliczeń GPU: "
-                f"{detail or 'brak danych'}"
+                "Nie udało się odczytać urządzeń ze środowiska AMD ROCm: "
+                f"{inventory_error or 'brak danych'}"
             ),
         )
+    hip = str(inventory.get("hip") or "")
     try:
-        payload = json.loads(completed.stdout.strip().splitlines()[-1])
-    except (IndexError, json.JSONDecodeError, TypeError) as exc:
+        device_count = max(int(inventory.get("count") or 0), 0)
+    except (TypeError, ValueError):
+        device_count = 0
+    if not hip or device_count < 1:
         return AmdRuntimeStatus(
             installed=True,
             ready=False,
             python_path=python_path,
+            hip_version=hip or None,
             target=target,
-            message=f"Środowisko AMD zwróciło nieprawidłowy wynik: {exc}",
+            message=(
+                "PyTorch ROCm jest zainstalowany, ale HIP nie wykrył żadnego urządzenia."
+            ),
         )
-    hip = str(payload.get("hip") or "")
-    devices = tuple(str(name) for name in payload.get("devices") or ())
-    architectures = tuple(str(name) for name in payload.get("architectures") or ())
-    result_value = payload.get("value")
-    ready = bool(
-        payload.get("available")
-        and hip
-        and devices
-        and isinstance(result_value, (int, float))
-        and abs(float(result_value) - 64.0) < 0.01
+
+    working_names: list[str] = []
+    working_architectures: list[str] = []
+    working_indices: list[int] = []
+    diagnostics: list[str] = []
+    per_device_timeout = max(min(float(timeout) / device_count, 90.0), 15.0)
+    for physical_index in range(device_count):
+        payload, error = _run_amd_json_command(
+            python_path,
+            AMD_GPU_PROBE_CODE,
+            timeout=per_device_timeout,
+            environment=amd_worker_environment(physical_index),
+        )
+        if payload is None:
+            diagnostics.append(f"GPU {physical_index}: {error or 'brak odpowiedzi'}")
+            continue
+        name = str(payload.get("name") or f"AMD GPU {physical_index}")
+        architecture = str(payload.get("architecture") or "")
+        result_value = payload.get("value")
+        ready = bool(
+            payload.get("available")
+            and payload.get("hip")
+            and isinstance(result_value, (int, float))
+            and abs(float(result_value) - 64.0) < 0.01
+        )
+        if not ready:
+            diagnostics.append(f"GPU {physical_index} ({name}): test macierzy nieudany")
+            continue
+        if not _runtime_device_matches_target(name, architecture, target):
+            diagnostics.append(
+                f"GPU {physical_index} ({name}, {architecture or 'bez architektury'}): "
+                f"nie pasuje do pakietu {target}"
+            )
+            continue
+        working_names.append(name)
+        working_architectures.append(architecture)
+        working_indices.append(physical_index)
+
+    if not working_indices:
+        detail = "; ".join(diagnostics[-3:])[-1200:]
+        return AmdRuntimeStatus(
+            installed=True,
+            ready=False,
+            python_path=python_path,
+            hip_version=hip or None,
+            target=target,
+            message=(
+                f"ROCm {hip} wykrył {device_count} urządzeń, ale żadne nie wykonało "
+                f"testu GPU dla pakietu {target or 'automatycznego'}. "
+                f"{detail or 'Brak dodatkowej diagnostyki.'}"
+            ),
+        )
+
+    descriptions = ", ".join(
+        f"{name} (indeks HIP {index})"
+        for name, index in zip(working_names, working_indices, strict=True)
+    )
+    skipped_count = max(device_count - len(working_indices), 0)
+    skipped_note = (
+        f" Pominięto {skipped_count} niezgodne urządzenie/iGPU."
+        if skipped_count
+        else ""
     )
     return AmdRuntimeStatus(
         installed=True,
-        ready=ready,
+        ready=True,
         python_path=python_path,
         hip_version=hip or None,
-        devices=devices,
-        architectures=architectures,
+        devices=tuple(working_names),
+        architectures=tuple(working_architectures),
+        runtime_indices=tuple(working_indices),
         target=target,
         message=(
-            f"AMD ROCm {hip} gotowe: {', '.join(devices)}. Test GPU zaliczony."
-            if ready
-            else "PyTorch ROCm jest zainstalowany, ale karta nie wykonała testu GPU."
+            f"AMD ROCm {hip} gotowe: {descriptions}. Test GPU zaliczony."
+            f"{skipped_note}"
         ),
     )
 
@@ -281,19 +371,27 @@ def attach_amd_runtime_devices(
     for position, device in enumerate(result):
         if device.kind != "gpu" or device.vendor != "AMD":
             continue
-        runtime_index = _matching_device_index(
+        matched_position = _matching_device_index(
             device.name,
             available_names,
             excluded=used_indices,
         )
-        if runtime_index is None:
+        if matched_position is None:
             continue
-        used_indices.add(runtime_index)
-        backend = f"ROCm {runtime.hip_version or ROCM_VERSION} (automatyczny)"
+        used_indices.add(matched_position)
+        physical_index = (
+            runtime.runtime_indices[matched_position]
+            if matched_position < len(runtime.runtime_indices)
+            else matched_position
+        )
+        backend = (
+            f"ROCm {runtime.hip_version or ROCM_VERSION} "
+            f"(automatyczny, izolowany indeks {physical_index})"
+        )
         result[position] = replace(
             device,
             backend=backend,
-            translation_target=f"{AMD_RUNTIME_TARGET_PREFIX}{runtime_index}",
+            translation_target=f"{AMD_RUNTIME_TARGET_PREFIX}{physical_index}",
         )
     return result
 
@@ -303,6 +401,15 @@ def install_amd_runtime(
     status: StatusCallback | None = None,
 ) -> AmdRuntimeStatus:
     """Automatically install AMD's official Windows PyTorch runtime."""
+
+    external_status = status or (lambda _message: None)
+
+    def report(message: str) -> None:
+        write_amd_runtime_diagnostic(message)
+        external_status(message)
+
+    status = report
+    status(f"Start automatycznej diagnostyki AMD dla: {', '.join(gpu_names)}")
 
     if os.name != "nt":
         raise AmdRuntimeError("Automatyczna instalacja AMD ROCm jest dostępna tylko w Windows 11.")
@@ -322,7 +429,6 @@ def install_amd_runtime(
             f"(build {ROCM_WINDOWS_BUILD} lub nowszy). Wykryto build {build}."
         )
 
-    status = status or (lambda _message: None)
     existing = probe_amd_runtime(timeout=75.0)
     if existing.ready and _runtime_supports_plan(existing, plan):
         status(existing.message)
@@ -395,11 +501,13 @@ def install_amd_runtime(
     status("Testowanie rzeczywistych obliczeń na karcie Radeon…")
     result = probe_amd_runtime(timeout=180.0)
     if not result.ready:
+        status(result.message)
         raise AmdRuntimeError(
             f"{result.message}\n\n"
             f"Sprawdź sterownik AMD Adrenalin {ROCM_DRIVER_VERSION} lub nowszy i Windows 11 "
             f"25H2. Szczegóły: {AMD_ROCM_COMPATIBILITY_URL}"
         )
+    status(result.message)
     return result
 
 
@@ -620,12 +728,70 @@ def _runtime_supports_plan(runtime: AmdRuntimeStatus, plan: AmdRuntimePlan) -> b
     return bool(plan.target != "all" and plan.target in runtime.architectures)
 
 
-def _amd_worker_environment() -> dict[str, str]:
+def amd_worker_environment(device_index: int | None = None) -> dict[str, str]:
     environment = os.environ.copy()
     environment["PYTHONUTF8"] = "1"
     environment["PYTHONIOENCODING"] = "utf-8"
     environment.setdefault("TORCH_BLAS_PREFER_HIPBLASLT", "1")
+    # AMD documents HIP_VISIBLE_DEVICES as the native Windows selector. Clear
+    # CUDA_VISIBLE_DEVICES so two aliases cannot apply conflicting filters.
+    environment.pop("CUDA_VISIBLE_DEVICES", None)
+    if device_index is None:
+        environment.pop("HIP_VISIBLE_DEVICES", None)
+    else:
+        selected = str(max(int(device_index), 0))
+        environment["HIP_VISIBLE_DEVICES"] = selected
     return environment
+
+
+def _amd_worker_environment() -> dict[str, str]:
+    """Backward-compatible internal alias for unmasked setup commands."""
+
+    return amd_worker_environment()
+
+
+def _run_amd_json_command(
+    python_path: Path,
+    code: str,
+    *,
+    timeout: float,
+    environment: dict[str, str],
+) -> tuple[dict[str, object] | None, str]:
+    try:
+        completed = subprocess.run(
+            [str(python_path), "-c", code],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=environment,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, str(exc)
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()[-1000:]
+        return None, detail or f"proces zakończył się kodem {completed.returncode}"
+    try:
+        payload = json.loads(completed.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError, TypeError) as exc:
+        return None, f"nieprawidłowa odpowiedź JSON: {exc}"
+    if not isinstance(payload, dict):
+        return None, "odpowiedź środowiska AMD nie jest obiektem JSON"
+    return payload, ""
+
+
+def _runtime_device_matches_target(
+    name: str,
+    architecture: str,
+    target: str | None,
+) -> bool:
+    if not target or target == "all":
+        return True
+    architecture_base = architecture.casefold().split(":", 1)[0]
+    return architecture_base == target.casefold() or infer_amd_gfx_target(name) == target
 
 
 def _windows_build_number() -> int:

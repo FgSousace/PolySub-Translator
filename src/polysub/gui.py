@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 32092)
+Total output lines: 3235
+
 from __future__ import annotations
 
 import ctypes
@@ -15,8 +18,10 @@ from . import __version__
 from .amd_runtime import (
     AMD_RUNTIME_TARGET_PREFIX,
     ROCM_VERSION,
+    amd_runtime_log_path,
     install_amd_runtime,
     select_amd_runtime_plan,
+    write_amd_runtime_diagnostic,
 )
 from .appearance import (
     DEFAULT_INTERFACE,
@@ -1546,206 +1551,13 @@ class PolySubApp(tk.Tk):
                 status=lambda message: self.after(0, self._amd_runtime_setup_status, message)
             )
         except Exception as exc:
+            write_amd_runtime_diagnostic(f"BŁĄD AUTOMATU AMD: {exc}")
             self.after(0, self._amd_runtime_setup_failed, str(exc))
             return
         self.after(0, self._amd_runtime_setup_finished, runtime.message)
 
     def _amd_runtime_setup_status(self, message: str) -> None:
-        self.amd_runtime_status_var.set(message)
-        self.device_status_var.set(f"Konfiguracja AMD: {message}")
-
-    def _amd_runtime_setup_finished(self, message: str) -> None:
-        self._amd_runtime_setup_running = False
-        self.amd_runtime_status_var.set(message)
-        self._append_activity(f"AMD ROCm gotowe — {message}")
-        self._start_device_detection()
-
-    def _amd_runtime_setup_failed(self, message: str) -> None:
-        self._amd_runtime_setup_running = False
-        self.amd_runtime_status_var.set(
-            f"AMD ROCm nie zostało uruchomione — program użyje CPU. {message} "
-            "Po poprawieniu sterownika lub internetu kliknij „Odśwież listę sprzętu”."
-        )
-        self.device_status_var.set("Akceleracja AMD niedostępna — aktywny bezpieczny CPU.")
-        self._append_activity(f"AMD ROCm: konfiguracja nieudana — {message}")
-
-    def _device_detection_worker(self) -> None:
-        try:
-            devices = detect_compute_devices()
-        except Exception as exc:
-            self.after(0, self._device_detection_failed, str(exc))
-            return
-        self.after(0, self._device_detection_finished, devices)
-
-    def _device_detection_finished(self, devices: list[ComputeDevice]) -> None:
-        self._device_detection_running = False
-        self.refresh_devices_button.configure(state="normal")
-        self._compute_devices = devices
-        self._device_label_to_id = {AUTO_DEVICE_LABEL: AUTO_DEVICE_ID}
-        self._device_label_to_id.update(
-            {device.display_label: device.id for device in devices}
-        )
-        labels = list(self._device_label_to_id)
-        self.device_combo.configure(values=labels)
-        selected = next(
-            (
-                label
-                for label, device_id in self._device_label_to_id.items()
-                if device_id == self._selected_device_id
-            ),
-            AUTO_DEVICE_LABEL,
-        )
-        self.device_var.set(selected)
-        self._selected_device_id = self._device_label_to_id[selected]
-        self._update_device_description()
-        ready_amd = [
-            device.name
-            for device in devices
-            if device.vendor == "AMD" and "ROCm" in device.backend
-        ]
-        if ready_amd:
-            self._amd_runtime_attempted = True
-            self.amd_runtime_status_var.set(
-                f"AMD ROCm gotowe: {', '.join(ready_amd)}."
-            )
-        else:
-            amd_names = tuple(
-                device.name
-                for device in devices
-                if device.kind == "gpu" and device.vendor == "AMD"
-            )
-            if amd_names and not self._amd_runtime_setup_running:
-                self.amd_runtime_status_var.set(
-                    "Radeon wykryty — PolySub automatycznie sprawdza właściwy pakiet ROCm. "
-                    "Do zakończenia przygotowania dostępny jest CPU."
-                )
-                if os.name == "nt":
-                    self.after(50, self._start_automatic_amd_runtime, amd_names)
-
-    def _device_detection_failed(self, _message: str) -> None:
-        self._device_detection_running = False
-        self.refresh_devices_button.configure(state="normal")
-        self._compute_devices = []
-        self._device_label_to_id = {AUTO_DEVICE_LABEL: AUTO_DEVICE_ID}
-        self.device_combo.configure(values=(AUTO_DEVICE_LABEL,))
-        self.device_var.set(AUTO_DEVICE_LABEL)
-        self._selected_device_id = AUTO_DEVICE_ID
-        self.device_status_var.set(
-            "Nie udało się odczytać listy sprzętu — program bezpiecznie użyje CPU."
-        )
-
-    def _device_selection_changed(self) -> None:
-        self._selected_device_id = self._device_label_to_id.get(
-            self.device_var.get(),
-            AUTO_DEVICE_ID,
-        )
-        self._update_device_description()
-
-    def _update_device_description(self) -> None:
-        prefix = (
-            "DeepL tłumaczy na swoim serwerze. Dla filmu: "
-            if ENGINE_LABELS.get(self.engine_var.get()) == "deepl"
-            else ""
-        )
-        if self._selected_device_id == AUTO_DEVICE_ID:
-            translation = resolve_compute_device(
-                self._compute_devices,
-                AUTO_DEVICE_ID,
-                "translation",
-            )
-            transcription = resolve_compute_device(
-                self._compute_devices,
-                AUTO_DEVICE_ID,
-                "transcription",
-            )
-            self.device_status_var.set(
-                f"{prefix}Auto wybierze do tłumaczenia: {translation.display_name}; "
-                f"do rozpoznawania mowy: {transcription.display_name}."
-            )
-            return
-        selected = next(
-            (
-                device
-                for device in self._compute_devices
-                if device.id == self._selected_device_id
-            ),
-            None,
-        )
-        if selected is None:
-            self.device_status_var.set(
-                f"{prefix}Wybrane urządzenie zniknęło — zostanie użyty tryb Auto."
-            )
-            return
-        self.device_status_var.set(f"{prefix}{describe_device_support(selected)}")
-
-    def _resolve_selected_device(self, task: TaskKind) -> DeviceResolution:
-        return resolve_compute_device(
-            self._compute_devices,
-            self._selected_device_id,
-            task,
-        )
-
-    def _preferred_burn_vendor(self) -> str | None:
-        if self._selected_device_id == AUTO_DEVICE_ID:
-            return None
-        selected = next(
-            (
-                device
-                for device in self._compute_devices
-                if device.id == self._selected_device_id
-            ),
-            None,
-        )
-        if selected is None:
-            return None
-        return "CPU" if selected.kind == "cpu" else selected.vendor
-
-    def _selected_cpu_usage_limit(self) -> int:
-        return CPU_USAGE_LABELS.get(self.cpu_usage_var.get(), DEFAULT_CPU_USAGE)
-
-    def _update_cpu_usage_description(self) -> None:
-        allocation = cpu_allocation(self._selected_cpu_usage_limit())
-        self.cpu_usage_status_var.set(
-            f"Model może użyć {allocation.threads} z "
-            f"{allocation.logical_processors} logicznych wątków. "
-            "Nie zmienia to jakości tłumaczenia."
-        )
-
-    def _selected_timing_mode(self) -> SubtitleTimingMode:
-        try:
-            return SubtitleTimingMode(self.timing_var.get())
-        except ValueError:
-            self.timing_var.set(SubtitleTimingMode.RECOMMENDED.value)
-            return SubtitleTimingMode.RECOMMENDED
-
-    def _select_timing_mode(self, mode: SubtitleTimingMode) -> None:
-        if self._timing_controls_locked:
-            return
-        self.timing_var.set(mode.value)
-        self._update_timing_description()
-
-    def _update_timing_card_styles(self, selected_mode: SubtitleTimingMode) -> None:
-        palette = self.theme
-        for mode, button in self.timing_profile_buttons.items():
-            selected = mode is selected_mode
-            button.configure(
-                background=palette.selected if selected else palette.panel,
-                foreground=palette.accent_hover if selected else palette.text,
-                activebackground=palette.selected if selected else palette.elevated,
-                activeforeground=palette.accent_hover,
-                highlightbackground=palette.accent if selected else palette.border,
-                highlightcolor=palette.accent if selected else palette.border,
-                highlightthickness=2 if selected else 1,
-                disabledforeground=palette.muted,
-                relief="flat",
-            )
-
-    def _update_timing_description(self) -> None:
-        mode = self._selected_timing_mode()
-        self._update_timing_card_styles(mode)
-        is_custom = mode is SubtitleTimingMode.CUSTOM
-        if is_custom:
-            self.timing_custom_frame.grid()
+        self.amd_run…2092 tokens truncated…
         else:
             self.timing_custom_frame.grid_remove()
         custom_state = "normal" if is_custom and not self._timing_controls_locked else "disabled"

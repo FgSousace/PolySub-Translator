@@ -72,9 +72,12 @@ def main() -> None:
 
     if "--self-test-amd-runtime" in sys.argv:
         from polysub.amd_runtime import (
+            AMD_GPU_INVENTORY_CODE,
+            AMD_GPU_PROBE_CODE,
             EMBEDDED_PYTHON_URL,
             ROCM_INDEX_URL,
             ROCM_VERSION,
+            amd_worker_environment,
             amd_worker_script,
             select_amd_runtime_plan,
         )
@@ -88,6 +91,13 @@ def main() -> None:
             raise RuntimeError("Automat AMD nie zawiera własnego oficjalnego środowiska Python.")
         if "[device-gfx1201]" not in plan.torch_requirement:
             raise RuntimeError("PyTorch AMD nie został ograniczony do architektury RX 9070 XT.")
+        compile(AMD_GPU_INVENTORY_CODE, "<amd-gpu-inventory>", "exec")
+        compile(AMD_GPU_PROBE_CODE, "<amd-gpu-probe>", "exec")
+        masked_environment = amd_worker_environment(1)
+        if masked_environment.get("HIP_VISIBLE_DEVICES") != "1":
+            raise RuntimeError("Worker AMD nie izoluje RX 9070 XT za pomocą HIP_VISIBLE_DEVICES.")
+        if "CUDA_VISIBLE_DEVICES" in masked_environment:
+            raise RuntimeError("Worker AMD pozostawia konfliktujący filtr CUDA_VISIBLE_DEVICES.")
         worker = amd_worker_script()
         if not worker.is_file():
             raise RuntimeError(f"W pakiecie brakuje workera AMD: {worker}")

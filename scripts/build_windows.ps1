@@ -51,4 +51,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup nie utworzył instalatora."
 }
 
-Write-Host "Gotowe: installer-output\PolySub-Translator-Setup.exe"
+$version = python -c `
+    "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+Write-Host "Gotowe: installer-output\PolySub-Translator-Setup-$version.exe"

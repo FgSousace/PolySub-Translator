@@ -1,11 +1,11 @@
-POLYSUB TRANSLATOR™ 0.5.0 — INSTALACJA NA WINDOWS
+POLYSUB TRANSLATOR™ 0.5.1 — INSTALACJA NA WINDOWS
 ==========================================
 
 Autor: fgSousace
 Dozwolony użytek osobisty i niekomercyjny. Użytek komercyjny wymaga osobnej
 zgody autora. Pełne warunki znajdują się w LICENSE.txt i NOTICE.txt.
 
-1. Uruchom plik PolySub-Translator-Setup.exe.
+1. Uruchom plik PolySub-Translator-Setup-0.5.1.exe.
 2. Wybierz folder, w którym ma zostać zainstalowany program.
 3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
 4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator™.
@@ -83,7 +83,10 @@ wariantu PyTorch. Program wykrywa kartę sam, dobiera pakiet (RX 9070 XT: gfx120
 pobiera własne odizolowane środowisko Python i oficjalne ROCm 7.14, a następnie
 testuje prawdziwe obliczenia GPU. Nie ma osobnego przycisku i nie trzeba instalować
 Pythona. ROCm wymaga obecnie Windows 11 25H2 oraz sterownika AMD Adrenalin 26.6.4
-lub nowszego. Karty bez oficjalnego pakietu pozostają na bezpiecznym CPU.
+lub nowszego. Jeżeli Ryzen ma także iGPU, program izoluje RX 9070 XT przez
+HIP_VISIBLE_DEVICES bez wyłączania zintegrowanej grafiki w systemie. Pełny log:
+%LOCALAPPDATA%\PolySub Translator\amd-runtime-diagnostics.log
+Karty bez oficjalnego pakietu pozostają na bezpiecznym CPU.
 
 Pełna instrukcja po instalacji: INSTRUKCJA_OBSLUGI.md
 

@@ -1,4 +1,22 @@
-## Nowości w wersji 0.5.0
+## Nowości w wersji 0.5.1
+
+- naprawiono akcelerację RX 9070 XT w komputerach z procesorem Ryzen posiadającym iGPU;
+- automat sprawdza każdy indeks HIP osobno, rozpoznaje właściwą kartę dyskretną i pomija
+  niezgodne zintegrowane Radeon Graphics;
+- worker ustawia natywne dla Windows `HIP_VISIBLE_DEVICES`, dzięki czemu wybrana karta
+  RX 9070 XT jest izolowana i widoczna dla modelu jako działające `cuda:0`;
+- test wykorzystuje również bezpośrednią liczbę urządzeń HIP, aby ominąć błędne wskazanie
+  zewnętrznego AMD SMI;
+- wszystkie etapy automatycznego przygotowania AMD trafiają do widocznego dziennika oraz pliku
+  `%LOCALAPPDATA%\PolySub Translator\amd-runtime-diagnostics.log`; błąd nie jest już cichy;
+- pliki pobierane z GitHub Releases zawierają numer wersji, na przykład
+  `PolySub-Translator-Setup-0.5.1.exe` i `PolySub-Translator-Installer-0.5.1.zip`;
+- aktualizator preferuje nową nazwę z numerem, zachowując zgodność ze starszymi wydaniami.
+
+Wersje 0.5.0, 0.4.9, 0.4.8, 0.4.7, 0.4.6, 0.4.5 i 0.4.4 pozostają osobno
+w historii GitHub Releases.
+
+## Wcześniej dodane w wersji 0.5.0
 
 - obsługa AMD na Windows uruchamia się teraz **automatycznie** po wykryciu zgodnego Radeona;
   usunięto osobny przycisk konfiguracji i pytanie o ręczne rozpoczęcie pobierania;
@@ -15,8 +33,6 @@
 - przerwane przygotowanie środowiska AMD jest naprawiane automatycznie przy następnym
   uruchomieniu albo po użyciu przycisku **Odśwież listę sprzętu**;
 - wydanie zawiera `Setup.exe` i ZIP z instalatorem. Nowa paczka portable nie jest tworzona.
-
-Wersje 0.4.9, 0.4.8, 0.4.7, 0.4.6, 0.4.5 i 0.4.4 pozostają osobno w historii GitHub Releases.
 
 ## Wcześniej dodane w wersji 0.4.9
 
@@ -149,13 +165,13 @@ Wydanie 0.4.4 pozostaje dostępne osobno w historii GitHub Releases.
 
 ### Najszybciej
 
-1. Pobierz `PolySub-Translator-Setup.exe`.
+1. Pobierz `PolySub-Translator-Setup-0.5.1.exe`.
 2. Uruchom plik, wybierz katalog i kliknij **Instaluj**.
 
 ### Instalator w ZIP-ie
 
-1. Pobierz `PolySub-Translator-Installer.zip`.
-2. Rozpakuj go — w środku są `PolySub-Translator-Setup.exe` i `README.txt`.
+1. Pobierz `PolySub-Translator-Installer-0.5.1.zip`.
+2. Rozpakuj go — w środku są `PolySub-Translator-Setup-0.5.1.exe` i `README.txt`.
 3. Uruchom instalator.
 
 Po instalacji kreator pokazuje krótką instrukcję i pozwala od razu uruchomić program. Skrót
@@ -166,6 +182,6 @@ Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 Windows SmartScreen może wyświetlić ostrzeżenie, ponieważ instalator nie ma jeszcze płatnego
 certyfikatu podpisu cyfrowego. W takim przypadku wybierz **Więcej informacji → Uruchom mimo to**.
 
-Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.5.0 nie zawierają nowej
+Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.5.1 nie zawierają nowej
 paczki portable, ponieważ dołączone biblioteki CUDA przekroczyłyby limit pojedynczego pliku GitHub
 Releases. Portable z wersji 0.4.5 nadal pozostaje dostępne w historii wydań.

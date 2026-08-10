@@ -1,10 +1,13 @@
 from pathlib import Path
 
+import polysub.amd_runtime as amd_runtime
 from polysub.amd_runtime import (
+    AMD_GPU_INVENTORY_CODE,
     AMD_GPU_PROBE_CODE,
     AMD_RUNTIME_TARGET_PREFIX,
     ROCM_VERSION,
     AmdRuntimeStatus,
+    amd_worker_environment,
     attach_amd_runtime_devices,
     infer_amd_gfx_target,
     select_amd_runtime_plan,
@@ -31,9 +34,10 @@ def test_rocm_target_is_added_only_after_a_real_ready_probe() -> None:
         python_path=Path("python.exe"),
         hip_version="7.14.0",
         devices=("AMD Radeon RX 9070 XT",),
+        runtime_indices=(1,),
     )
     attached = attach_amd_runtime_devices(physical, ready)[0]
-    assert attached.translation_target == f"{AMD_RUNTIME_TARGET_PREFIX}0"
+    assert attached.translation_target == f"{AMD_RUNTIME_TARGET_PREFIX}1"
     assert "ROCm 7.14.0" in attached.backend
 
 
@@ -70,11 +74,12 @@ def test_two_identical_radeons_receive_distinct_worker_indices() -> None:
         installed=True,
         ready=True,
         devices=("AMD Radeon RX 9070 XT", "AMD Radeon RX 9070 XT"),
+        runtime_indices=(1, 3),
     )
     attached = attach_amd_runtime_devices(devices, ready)
     assert [device.translation_target for device in attached] == [
-        f"{AMD_RUNTIME_TARGET_PREFIX}0",
         f"{AMD_RUNTIME_TARGET_PREFIX}1",
+        f"{AMD_RUNTIME_TARGET_PREFIX}3",
     ]
 
 
@@ -92,7 +97,87 @@ def test_current_radeon_families_select_the_exact_official_target() -> None:
     assert ROCM_VERSION == "7.14.0"
     for name, target in expected.items():
         assert infer_amd_gfx_target(name) == target
+    compile(AMD_GPU_INVENTORY_CODE, "<amd-gpu-inventory>", "exec")
     compile(AMD_GPU_PROBE_CODE, "<amd-gpu-probe>", "exec")
+
+
+def test_rx_9070_xt_behind_ryzen_igpu_keeps_its_real_hip_index() -> None:
+    physical = [
+        ComputeDevice(
+            id="amd-igpu",
+            name="AMD Radeon(TM) Graphics",
+            kind="gpu",
+            vendor="AMD",
+            backend="wykryta przez system",
+        ),
+        ComputeDevice(
+            id="amd-dgpu",
+            name="AMD Radeon RX 9070 XT",
+            kind="gpu",
+            vendor="AMD",
+            backend="wykryta przez system",
+        ),
+    ]
+    ready = AmdRuntimeStatus(
+        installed=True,
+        ready=True,
+        hip_version="7.14.0",
+        devices=("AMD Radeon RX 9070 XT",),
+        architectures=("gfx1201:sramecc-:xnack-",),
+        runtime_indices=(1,),
+        target="gfx1201",
+    )
+
+    attached = attach_amd_runtime_devices(physical, ready)
+
+    assert attached[0].translation_target is None
+    assert attached[1].translation_target == f"{AMD_RUNTIME_TARGET_PREFIX}1"
+
+
+def test_amd_worker_masks_igpu_and_remaps_selected_radeon_to_cuda_zero() -> None:
+    environment = amd_worker_environment(1)
+
+    assert environment["HIP_VISIBLE_DEVICES"] == "1"
+    assert "CUDA_VISIBLE_DEVICES" not in environment
+
+
+def test_probe_skips_ryzen_igpu_and_accepts_masked_rx_9070_xt(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    python_path = tmp_path / "python.exe"
+    python_path.touch()
+    masks: list[str | None] = []
+
+    def fake_run(_python, code, *, timeout, environment):
+        del timeout
+        masks.append(environment.get("HIP_VISIBLE_DEVICES"))
+        if code == AMD_GPU_INVENTORY_CODE:
+            return {"hip": "7.14.0", "count": 2}, ""
+        if environment.get("HIP_VISIBLE_DEVICES") == "0":
+            return None, "iGPU nie zawiera kernela gfx1036"
+        return {
+            "available": True,
+            "hip": "7.14.0",
+            "name": "AMD Radeon RX 9070 XT",
+            "architecture": "gfx1201:sramecc-:xnack-",
+            "value": 64.0,
+        }, ""
+
+    monkeypatch.setattr(amd_runtime, "amd_runtime_python", lambda: python_path)
+    monkeypatch.setattr(
+        amd_runtime,
+        "_load_runtime_manifest",
+        lambda: {"target": "gfx1201"},
+    )
+    monkeypatch.setattr(amd_runtime, "_run_amd_json_command", fake_run)
+
+    result = amd_runtime.probe_amd_runtime(timeout=45.0)
+
+    assert result.ready
+    assert result.devices == ("AMD Radeon RX 9070 XT",)
+    assert result.runtime_indices == (1,)
+    assert masks == [None, "0", "1"]
 
 
 def test_rx_9070_xt_plan_uses_small_gfx1201_pytorch_extra() -> None:
