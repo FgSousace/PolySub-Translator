@@ -22,7 +22,7 @@ import sys
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .compute_devices import ComputeDevice
@@ -177,7 +177,7 @@ def write_amd_runtime_diagnostic(message: str) -> None:
     try:
         path = amd_runtime_log_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with path.open("a", encoding="utf-8") as output:
             output.write(f"[{timestamp}] {message.strip()}\n")
     except OSError:
