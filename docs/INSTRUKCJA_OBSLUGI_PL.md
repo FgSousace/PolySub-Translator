@@ -1,13 +1,13 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.5.1 • autor: fgSousace • użytek niekomercyjny**
+**Wersja 0.5.2 • autor: fgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
 
 ## 1. Instalacja
 
-1. Pobierz `PolySub-Translator-Setup-0.5.1.exe` z oficjalnej strony GitHub Releases.
+1. Pobierz `PolySub-Translator-Setup-0.5.2.exe` z oficjalnej strony GitHub Releases.
 2. Uruchom instalator, wybierz folder i kliknij **Instaluj**.
 3. Przy pierwszym uruchomieniu otwórz **Pobierz / usuń…** i pobierz co najmniej
    jeden model lokalny albo wybierz silnik DeepL i wpisz swój klucz API.
@@ -69,6 +69,12 @@ ukończone. Pełny katalog 20 modeli znajduje się w **Pobierz / usuń…**. Men
 pokazuje rozmiar, wymagania, zakres języków, licencję i stan plików. Nieukończony
 model nie może zostać przypadkowo uruchomiony.
 
+Jeżeli Windows zgłosi niedostępny lub niezaufany punkt w pamięci Hugging Face,
+PolySub pominie wadliwą kopię zamiast zamykać aplikację. Model otrzyma stan
+**Cache niedostępny**; w menedżerze usuń go i pobierz ponownie. Diagnostyka jest
+zapisywana w `%LOCALAPPDATA%\PolySub Translator\model-cache-diagnostics.log`. Nowe
+pobranie na Windows użyje zwykłych plików zamiast problematycznych symlinków.
+
 ## 7. NVIDIA, AMD i CPU
 
 - **NVIDIA:** instalator zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9. Jest to
@@ -78,7 +84,8 @@ model nie może zostać przypadkowo uruchomiony.
   program sam pobiera własne środowisko Python i właściwy pakiet AMD ROCm 7.14,
   po czym wykonuje prawdziwe obliczenie testowe na GPU. W czasie przygotowania
   można korzystać z bezpiecznej drogi CPU. Gdy Ryzen udostępnia dodatkowe iGPU,
-  program automatycznie pomija je i izoluje właściwą kartę dyskretną.
+  program automatycznie pomija je i izoluje właściwą kartę dyskretną. Nieudana
+  albo przerwana instalacja ROCm jest dokańczana przy ponownym uruchomieniu.
 - **CPU Intel/AMD:** zawsze dostępna droga awaryjna. Ustawienie 100% przekazuje
   modelowi wszystkie logiczne wątki, ale nie obniża jakości.
 
@@ -102,6 +109,8 @@ Po przetłumaczeniu napisów filmu możesz wybrać:
 
 - **Nie widzę modelu w głównym oknie:** pobieranie nie jest ukończone; otwórz
   menedżer i wybierz **Wznów/Pobierz**.
+- **Cache modelu jest niedostępny / WinError 448:** aplikacja nadal się uruchomi.
+  Otwórz **Pobierz / usuń…**, usuń oznaczoną kopię i pobierz model ponownie.
 - **GPU jest na liście, ale program wybiera CPU:** karta została wykryta fizycznie,
   lecz backend albo sterownik nie przeszedł testu. Opis pod listą podaje powód.
 - **RX 9070 XT używa CPU:** zostaw program uruchomiony do zakończenia automatycznego

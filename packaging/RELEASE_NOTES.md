@@ -1,4 +1,26 @@
-## Nowości w wersji 0.5.1
+## Poprawki w wersji 0.5.2
+
+- naprawiono automatyczną instalację oficjalnego PyTorch ROCm 7.14 na Windows: instalator nie
+  blokuje już wymaganego pakietu `rocm-7.14.0.tar.gz` przez błędne `--only-binary`;
+- przerwane środowisko AMD z wersji 0.5.1 jest automatycznie dokańczane przy następnym
+  uruchomieniu lub po kliknięciu **Odśwież listę sprzętu** — bez ręcznego instalowania Pythona;
+- skaner modeli przechwytuje `WinError 448` i inne błędy niedostępnych punktów instalacji,
+  dowiązań oraz uszkodzonych snapshotów Hugging Face zamiast zamykać całe GUI;
+- wadliwy snapshot jest pomijany, a program nadal wyszukuje inną kompletną kopię modelu;
+  jeżeli jej nie ma, model otrzymuje czytelny stan **Cache niedostępny** i można go usunąć
+  oraz pobrać ponownie z poziomu menedżera;
+- nowe pobrania modeli używają na Windows oficjalnego trybu Hugging Face bez symlinków,
+  aby błąd niezaufanego punktu nie powstawał ponownie;
+- diagnostyka cache modeli jest zapisywana w
+  `%LOCALAPPDATA%\PolySub Translator\model-cache-diagnostics.log`;
+- zachowano izolowanie właściwej karty Radeon od iGPU przez `HIP_VISIBLE_DEVICES` oraz
+  rzeczywisty test mnożenia macierzy przed oznaczeniem GPU jako gotowego;
+- gotowe pliki mają wersjonowane nazwy `PolySub-Translator-Setup-0.5.2.exe` i
+  `PolySub-Translator-Installer-0.5.2.zip`.
+
+Wersje 0.5.1, 0.5.0 i wszystkie wcześniejsze pozostają osobno w historii GitHub Releases.
+
+## Wcześniej poprawione w wersji 0.5.1
 
 - naprawiono akcelerację RX 9070 XT w komputerach z procesorem Ryzen posiadającym iGPU;
 - automat sprawdza każdy indeks HIP osobno, rozpoznaje właściwą kartę dyskretną i pomija
@@ -165,13 +187,13 @@ Wydanie 0.4.4 pozostaje dostępne osobno w historii GitHub Releases.
 
 ### Najszybciej
 
-1. Pobierz `PolySub-Translator-Setup-0.5.1.exe`.
+1. Pobierz `PolySub-Translator-Setup-0.5.2.exe`.
 2. Uruchom plik, wybierz katalog i kliknij **Instaluj**.
 
 ### Instalator w ZIP-ie
 
-1. Pobierz `PolySub-Translator-Installer-0.5.1.zip`.
-2. Rozpakuj go — w środku są `PolySub-Translator-Setup-0.5.1.exe` i `README.txt`.
+1. Pobierz `PolySub-Translator-Installer-0.5.2.zip`.
+2. Rozpakuj go — w środku są `PolySub-Translator-Setup-0.5.2.exe` i `README.txt`.
 3. Uruchom instalator.
 
 Po instalacji kreator pokazuje krótką instrukcję i pozwala od razu uruchomić program. Skrót
@@ -182,6 +204,6 @@ Nie pobieraj plików `Source code`, jeżeli chcesz po prostu uruchomić program.
 Windows SmartScreen może wyświetlić ostrzeżenie, ponieważ instalator nie ma jeszcze płatnego
 certyfikatu podpisu cyfrowego. W takim przypadku wybierz **Więcej informacji → Uruchom mimo to**.
 
-Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.5.1 nie zawierają nowej
+Instalator nie wymaga Pythona, Gita ani uprawnień administratora. Wydania 0.4.6–0.5.2 nie zawierają nowej
 paczki portable, ponieważ dołączone biblioteki CUDA przekroczyłyby limit pojedynczego pliku GitHub
 Releases. Portable z wersji 0.4.5 nadal pozostaje dostępne w historii wydań.

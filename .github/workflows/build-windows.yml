@@ -100,6 +100,10 @@ jobs:
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-model-catalog"
 
+      - name: Test EXE — uszkodzony cache modeli
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-model-cache"
+
       - name: Test EXE — czas napisów
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-subtitle-timing"
@@ -146,6 +150,7 @@ jobs:
             "--self-test-nvidia-runtime",
             "--self-test-branding",
             "--self-test-amd-runtime",
+            "--self-test-model-cache",
             "--self-test-gui"
           )) {
             .\scripts\run_windows_self_test.ps1 $installedExe $argument

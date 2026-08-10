@@ -17,12 +17,12 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'fgSousace'),
           StringStruct(u'FileDescription', u'PolySub Translator™'),
-          StringStruct(u'FileVersion', u'0.5.1'),
+          StringStruct(u'FileVersion', u'0.5.2'),
           StringStruct(u'InternalName', u'PolySubTranslator'),
           StringStruct(u'LegalCopyright', u'Copyright © 2026 fgSousace'),
           StringStruct(u'OriginalFilename', u'PolySubTranslator.exe'),
           StringStruct(u'ProductName', u'PolySub Translator™'),
-          StringStruct(u'ProductVersion', u'0.5.1'),
+          StringStruct(u'ProductVersion', u'0.5.2'),
           StringStruct(u'Comments', u'Noncommercial use only — PolyForm Noncommercial 1.0.0'),
         ],
       )

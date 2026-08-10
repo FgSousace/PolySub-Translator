@@ -5,6 +5,7 @@ import shutil
 import stat
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .translation_models import TranslationModelSpec
@@ -36,14 +37,37 @@ class ModelStatus:
     size_bytes: int
     snapshot_path: Path | None
     cache_path: Path
+    cache_error: str | None = None
 
     @property
     def status_label(self) -> str:
         if self.installed:
             return f"Pobrany · {format_bytes(self.size_bytes)}"
+        if self.cache_error:
+            return "Cache niedostępny · usuń i pobierz ponownie"
         if self.partial:
             return f"Nieukończony · {format_bytes(self.size_bytes)}"
         return "Niepobrany"
+
+
+_RECORDED_CACHE_ERRORS: set[str] = set()
+
+
+def configure_safe_huggingface_cache(*, windows: bool | None = None) -> None:
+    """Avoid Windows reparse points that can trigger WinError 448.
+
+    Recent huggingface_hub releases support an official no-symlink cache mode.
+    Preserve an explicit user override, but default packaged/source Windows runs
+    to ordinary files so a freshly downloaded model remains traversable.
+    """
+
+    if windows is None:
+        windows = os.name == "nt"
+    if windows:
+        os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+
+
+configure_safe_huggingface_cache()
 
 
 def default_model_cache_dir() -> Path:
@@ -72,14 +96,20 @@ def model_status(
     cache_dir: Path | None = None,
 ) -> ModelStatus:
     repo_path = repo_cache_dir(model, cache_dir=cache_dir)
-    snapshot = _latest_complete_snapshot(repo_path)
-    size = _directory_size(repo_path) if repo_path.exists() else 0
+    errors: list[str] = []
+    snapshot = _latest_complete_snapshot(repo_path, errors=errors)
+    repo_exists = _safe_exists(repo_path, errors=errors)
+    size = _directory_size(repo_path) if repo_exists else 0
+    cache_error = errors[-1] if errors else None
+    if cache_error:
+        _record_cache_error(model.repo_id, cache_error)
     return ModelStatus(
         installed=snapshot is not None,
-        partial=repo_path.exists() and snapshot is None and size > 0,
+        partial=repo_exists and snapshot is None and (size > 0 or cache_error is not None),
         size_bytes=size,
         snapshot_path=snapshot,
         cache_path=repo_path,
+        cache_error=cache_error,
     )
 
 
@@ -163,9 +193,34 @@ def format_bytes(size: int) -> str:
     return f"{value:.1f} TB"
 
 
-def _latest_complete_snapshot(repo_path: Path) -> Path | None:
+def model_cache_log_path() -> Path:
+    base = os.getenv("LOCALAPPDATA")
+    parent = Path(base) / "PolySub Translator" if base else Path.home() / ".polysub-translator"
+    return parent / "model-cache-diagnostics.log"
+
+
+def _record_cache_error(repo_id: str, detail: str) -> None:
+    key = f"{repo_id}: {detail}"
+    if key in _RECORDED_CACHE_ERRORS:
+        return
+    _RECORDED_CACHE_ERRORS.add(key)
+    try:
+        path = model_cache_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with path.open("a", encoding="utf-8") as output:
+            output.write(f"[{timestamp}] {key}\n")
+    except OSError:
+        pass
+
+
+def _latest_complete_snapshot(
+    repo_path: Path,
+    *,
+    errors: list[str] | None = None,
+) -> Path | None:
     snapshots = repo_path / "snapshots"
-    if not snapshots.is_dir():
+    if not _safe_is_dir(snapshots, errors=errors):
         return None
     preferred: list[Path] = []
     main_ref = repo_path / "refs" / "main"
@@ -175,27 +230,93 @@ def _latest_complete_snapshot(repo_path: Path) -> Path | None:
         revision = ""
     if revision:
         preferred.append(snapshots / revision)
+    others_with_mtime: list[tuple[float, Path]] = []
     try:
-        others = sorted(
-            (path for path in snapshots.iterdir() if path.is_dir()),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
-    except OSError:
-        others = []
+        entries = tuple(snapshots.iterdir())
+    except OSError as exc:
+        _append_path_error(errors, snapshots, exc)
+        entries = ()
+    for path in entries:
+        if not _safe_is_dir(path, errors=errors):
+            continue
+        try:
+            modified = path.stat().st_mtime
+        except OSError as exc:
+            _append_path_error(errors, path, exc)
+            modified = 0.0
+        others_with_mtime.append((modified, path))
+    others = [path for _modified, path in sorted(others_with_mtime, reverse=True)]
     preferred.extend(path for path in others if path not in preferred)
-    return next((path for path in preferred if _is_complete_snapshot(path)), None)
+    return next(
+        (
+            path
+            for path in preferred
+            if _is_complete_snapshot(path, errors=errors)
+        ),
+        None,
+    )
 
 
-def _is_complete_snapshot(snapshot: Path) -> bool:
-    if not snapshot.is_dir() or not (snapshot / "config.json").is_file():
+def _is_complete_snapshot(
+    snapshot: Path,
+    *,
+    errors: list[str] | None = None,
+) -> bool:
+    if not _safe_is_dir(snapshot, errors=errors) or not _safe_is_file(
+        snapshot / "config.json",
+        errors=errors,
+    ):
         return False
     weight_patterns = (
         "*.safetensors",
         "pytorch_model*.bin",
         "model*.bin",
     )
-    return any(any(snapshot.glob(pattern)) for pattern in weight_patterns)
+    for pattern in weight_patterns:
+        try:
+            candidates = tuple(snapshot.glob(pattern))
+        except OSError as exc:
+            _append_path_error(errors, snapshot, exc)
+            continue
+        if any(_safe_is_file(candidate, errors=errors) for candidate in candidates):
+            return True
+    return False
+
+
+def _safe_exists(path: Path, *, errors: list[str] | None = None) -> bool:
+    try:
+        return path.exists()
+    except OSError as exc:
+        _append_path_error(errors, path, exc)
+        return False
+
+
+def _safe_is_dir(path: Path, *, errors: list[str] | None = None) -> bool:
+    try:
+        return path.is_dir()
+    except OSError as exc:
+        _append_path_error(errors, path, exc)
+        return False
+
+
+def _safe_is_file(path: Path, *, errors: list[str] | None = None) -> bool:
+    try:
+        return path.is_file()
+    except OSError as exc:
+        _append_path_error(errors, path, exc)
+        return False
+
+
+def _append_path_error(
+    errors: list[str] | None,
+    path: Path,
+    error: OSError,
+) -> None:
+    if errors is None:
+        return
+    message = f"{path}: {error}"
+    if message not in errors:
+        errors.append(message)
 
 
 def _directory_size(path: Path) -> int:

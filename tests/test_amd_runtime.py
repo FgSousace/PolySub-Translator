@@ -188,6 +188,72 @@ def test_rx_9070_xt_plan_uses_small_gfx1201_pytorch_extra() -> None:
     assert plan.torch_requirement == "torch[device-gfx1201]==2.12.0+rocm7.14.0"
 
 
+def test_rocm_install_command_allows_amds_source_metapackage(tmp_path: Path) -> None:
+    plan = select_amd_runtime_plan(("AMD Radeon RX 9070 XT",))
+
+    assert plan is not None
+    command = amd_runtime._amd_torch_install_command(tmp_path / "python.exe", plan)
+
+    assert "--only-binary" not in command
+    assert "--prefer-binary" in command
+    assert command[command.index("--index-url") + 1] == amd_runtime.ROCM_INDEX_URL
+    assert command[-1] == plan.torch_requirement
+
+
+def test_automatic_rocm_setup_repairs_a_previous_failed_install(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    python_path = tmp_path / "python.exe"
+    python_path.touch()
+    probes = iter(
+        (
+            AmdRuntimeStatus(
+                installed=True,
+                ready=False,
+                python_path=python_path,
+                message="Poprzednia instalacja jest nieukończona.",
+            ),
+            AmdRuntimeStatus(
+                installed=True,
+                ready=True,
+                python_path=python_path,
+                hip_version="7.14.0",
+                devices=("AMD Radeon RX 9070 XT",),
+                architectures=("gfx1201",),
+                runtime_indices=(1,),
+                target="gfx1201",
+                message="AMD ROCm gotowe.",
+            ),
+        )
+    )
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(amd_runtime.os, "name", "nt")
+    monkeypatch.setattr(amd_runtime.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(amd_runtime, "_windows_build_number", lambda: 26200)
+    monkeypatch.setattr(amd_runtime, "amd_runtime_directory", lambda: tmp_path)
+    monkeypatch.setattr(amd_runtime, "amd_runtime_python", lambda: python_path)
+    monkeypatch.setattr(amd_runtime, "_embedded_python_core_ready", lambda _path: True)
+    monkeypatch.setattr(amd_runtime, "_embedded_pip_ready", lambda _path: True)
+    monkeypatch.setattr(amd_runtime, "probe_amd_runtime", lambda **_kwargs: next(probes))
+    monkeypatch.setattr(
+        amd_runtime,
+        "_run_install_command",
+        lambda command, _status, _message: commands.append(command),
+    )
+    monkeypatch.setattr(amd_runtime, "_write_runtime_manifest", lambda _plan: None)
+    monkeypatch.setattr(amd_runtime, "write_amd_runtime_diagnostic", lambda _message: None)
+
+    result = amd_runtime.install_amd_runtime(("AMD Radeon RX 9070 XT",))
+
+    assert result.ready
+    assert len(commands) == 2
+    assert "--only-binary" not in commands[0]
+    assert commands[0][-1] == "torch[device-gfx1201]==2.12.0+rocm7.14.0"
+    assert "transformers>=4.55.5,<6" in commands[1]
+
+
 def test_mixed_supported_radeons_use_device_all() -> None:
     plan = select_amd_runtime_plan(
         ("AMD Radeon RX 9070 XT", "AMD Radeon RX 7900 XTX")

@@ -451,22 +451,7 @@ def install_amd_runtime(
         f"dla {plan.target}…"
     )
     _run_install_command(
-        [
-            str(python_path),
-            "-m",
-            "pip",
-            "--isolated",
-            "install",
-            "--disable-pip-version-check",
-            "--progress-bar",
-            "off",
-            "--no-cache-dir",
-            "--only-binary",
-            ":all:",
-            "--index-url",
-            ROCM_INDEX_URL,
-            plan.torch_requirement,
-        ],
+        _amd_torch_install_command(python_path, plan),
         status,
         "Nie udało się zainstalować oficjalnego PyTorch ROCm.",
     )
@@ -509,6 +494,37 @@ def install_amd_runtime(
         )
     status(result.message)
     return result
+
+
+def _amd_torch_install_command(
+    python_path: Path,
+    plan: AmdRuntimePlan,
+) -> list[str]:
+    """Build AMD's documented pip command without rejecting ROCm's source shim.
+
+    AMD publishes the small ``rocm`` metapackage as ``rocm-<version>.tar.gz`` in
+    the multi-architecture index.  ``--only-binary :all:`` therefore makes the
+    otherwise official torch extra impossible to resolve and produces
+    ``No matching distribution found for rocm``.  Prefer wheels for the large
+    components, but allow that trusted AMD source package exactly as AMD's own
+    Windows installation command does.
+    """
+
+    return [
+        str(python_path),
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--disable-pip-version-check",
+        "--progress-bar",
+        "off",
+        "--no-cache-dir",
+        "--prefer-binary",
+        "--index-url",
+        ROCM_INDEX_URL,
+        plan.torch_requirement,
+    ]
 
 
 def amd_worker_script() -> Path:

@@ -132,6 +132,31 @@ def test_version_050_prefers_versioned_051_installer_name() -> None:
     assert result.installer_url == versioned_installer
 
 
+def test_version_051_finds_versioned_052_installer() -> None:
+    versioned_installer = (
+        "https://github.com/FgSousace/PolySub-Translator/"
+        "releases/download/v0.5.2/PolySub-Translator-Setup-0.5.2.exe"
+    )
+    session = FakeSession(
+        {
+            "tag_name": "v0.5.2",
+            "html_url": "https://github.com/FgSousace/PolySub-Translator/releases/tag/v0.5.2",
+            "assets": [
+                {
+                    "name": "PolySub-Translator-Setup-0.5.2.exe",
+                    "browser_download_url": versioned_installer,
+                }
+            ],
+        }
+    )
+
+    result = check_for_updates("0.5.1", session=session)
+
+    assert result.update_available
+    assert result.latest_version == "0.5.2"
+    assert result.installer_url == versioned_installer
+
+
 def test_untrusted_download_url_falls_back_to_release_page() -> None:
     session = FakeSession(
         {

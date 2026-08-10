@@ -10,8 +10,8 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.5.1-alpha` — automatyczny AMD ROCm 7.14 dla zgodnych Radeonów, anulowanie
-> z bezpiecznym wznowieniem, tylko gotowe modele w GUI i CUDA 12.8 dla NVIDIA.
+> Status: `v0.5.2` — automatyczna akceleracja zgodnych Radeonów i NVIDIA, odporne
+> skanowanie modeli, anulowanie z bezpiecznym wznowieniem oraz tylko gotowe modele w GUI.
 
 ## Najważniejsze funkcje
 
@@ -101,6 +101,12 @@ dopiero po potwierdzeniu pliki są pobierane z oficjalnego repozytorium Hugging 
 pobieranie można wznowić, a każdy model można później usunąć bez naruszania pozostałych.
 Główne pole wyboru celowo pokazuje tylko modele, których stan to **Pobrany i gotowy**.
 Nieukończony model pozostaje widoczny wyłącznie w menedżerze, gdzie można wznowić pobieranie.
+Niedostępny punkt instalacji, uszkodzone dowiązanie albo pojedynczy wadliwy snapshot nie zamyka
+GUI. Skaner pomija go, szuka innej kompletnej kopii i zapisuje szczegóły w
+`%LOCALAPPDATA%\PolySub Translator\model-cache-diagnostics.log`. Gdy poprawnej kopii nie ma,
+menedżer pokazuje stan **Cache niedostępny** i pozwala usunąć model przed ponownym pobraniem.
+Na Windows nowe pobrania domyślnie korzystają z oficjalnego trybu Hugging Face bez symlinków,
+aby nie odtwarzać problematycznego punktu instalacji.
 
 Kolejność 1–20 jest orientacyjnym rankingiem ogólnej jakości, a nie gwarancją dla każdego języka.
 Mały OPUS wyspecjalizowany w jednej parze może wypaść lepiej od większego modelu ogólnego właśnie
@@ -148,12 +154,14 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-Instalator v0.5.1 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+Instalator v0.5.2 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
 RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
 PyTorch. PolySub po wykryciu zgodnej karty sam dobiera jej architekturę, w tle pobiera własne
 odizolowane środowisko Python oraz oficjalny PyTorch ROCm 7.14, a następnie wykonuje prawdziwe
 mnożenie macierzy na GPU. Nie ma osobnego przycisku konfiguracji ani zależności od Pythona
 zainstalowanego w systemie. RX 9070 XT jest automatycznie przypisywany do pakietu `gfx1201`.
+Instalacja dopuszcza wymagany przez oficjalny indeks źródłowy metapakiet `rocm`, dlatego
+przerwane środowisko z wcześniejszej wersji może zostać automatycznie dokończone.
 Jeżeli procesor Ryzen udostępnia również zintegrowane Radeon Graphics, PolySub testuje każdy indeks
 HIP osobno, izoluje RX 9070 XT przez `HIP_VISIBLE_DEVICES` i uruchamia ją jako `cuda:0` tylko
 w prywatnym workerze. Nie wyłącza iGPU w BIOS-ie ani w Menedżerze urządzeń, więc może ono nadal
@@ -229,9 +237,9 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 1. Otwórz [najnowszą wersję PolySub Translator](https://github.com/FgSousace/PolySub-Translator/releases/latest).
 2. W sekcji **Assets** wybierz jeden z dwóch wariantów:
-   - `PolySub-Translator-Setup-0.5.1.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
-   - `PolySub-Translator-Installer-0.5.1.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
-3. Uruchom `PolySub-Translator-Setup-0.5.1.exe` i wybierz katalog instalacji.
+   - `PolySub-Translator-Setup-0.5.2.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
+   - `PolySub-Translator-Installer-0.5.2.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
+3. Uruchom `PolySub-Translator-Setup-0.5.2.exe` i wybierz katalog instalacji.
 4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
 5. Po instalacji kreator pokaże krótką instrukcję, opcję uruchomienia programu oraz opcjonalne
    pole **Wybierz i pobierz modele AI**.
@@ -260,7 +268,7 @@ zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie j
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.1 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.2 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 

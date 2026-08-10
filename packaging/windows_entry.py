@@ -20,6 +20,9 @@ def _record_self_test_trace(message: str) -> None:
 
 
 def main() -> None:
+    if os.name == "nt":
+        os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+
     if "--version" in sys.argv:
         from polysub import __version__
 
@@ -77,6 +80,7 @@ def main() -> None:
             EMBEDDED_PYTHON_URL,
             ROCM_INDEX_URL,
             ROCM_VERSION,
+            _amd_torch_install_command,
             amd_worker_environment,
             amd_worker_script,
             select_amd_runtime_plan,
@@ -91,6 +95,9 @@ def main() -> None:
             raise RuntimeError("Automat AMD nie zawiera własnego oficjalnego środowiska Python.")
         if "[device-gfx1201]" not in plan.torch_requirement:
             raise RuntimeError("PyTorch AMD nie został ograniczony do architektury RX 9070 XT.")
+        install_command = _amd_torch_install_command(Path("python.exe"), plan)
+        if "--only-binary" in install_command or "--prefer-binary" not in install_command:
+            raise RuntimeError("Instalator AMD ponownie blokuje źródłowy pakiet rocm.")
         compile(AMD_GPU_INVENTORY_CODE, "<amd-gpu-inventory>", "exec")
         compile(AMD_GPU_PROBE_CODE, "<amd-gpu-probe>", "exec")
         masked_environment = amd_worker_environment(1)
@@ -102,6 +109,41 @@ def main() -> None:
         if not worker.is_file():
             raise RuntimeError(f"W pakiecie brakuje workera AMD: {worker}")
         compile(worker.read_text(encoding="utf-8"), str(worker), "exec")
+        return
+
+    if "--self-test-model-cache" in sys.argv:
+        import polysub.model_downloads as model_downloads
+        from polysub.model_downloads import model_status, repo_cache_dir
+        from polysub.translation_models import get_model_spec
+
+        with TemporaryDirectory(prefix="polysub-cache-test-") as temporary:
+            cache_root = Path(temporary)
+            model = get_model_spec("opus-en-pl")
+            repo = repo_cache_dir(model, cache_dir=cache_root)
+            snapshot = repo / "snapshots" / "broken"
+            snapshot.mkdir(parents=True)
+            (repo / "refs").mkdir()
+            (repo / "refs" / "main").write_text("broken", encoding="utf-8")
+            config = snapshot / "config.json"
+            config.write_text("{}", encoding="utf-8")
+            (snapshot / "model.safetensors").write_bytes(b"weights")
+            original_is_file = Path.is_file
+            original_record = model_downloads._record_cache_error
+
+            def simulated_windows_error(path: Path) -> bool:
+                if path == config:
+                    raise OSError(448, "niezaufany punkt instalacji")
+                return original_is_file(path)
+
+            try:
+                Path.is_file = simulated_windows_error
+                model_downloads._record_cache_error = lambda *_args: None
+                status = model_status(model, cache_dir=cache_root)
+            finally:
+                Path.is_file = original_is_file
+                model_downloads._record_cache_error = original_record
+            if status.installed or not status.partial or not status.cache_error:
+                raise RuntimeError("Skaner modeli nie obsłużył bezpiecznie WinError 448.")
         return
 
     if "--self-test-subtitle-timing" in sys.argv:
