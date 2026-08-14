@@ -16,8 +16,8 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.5.4` — polski lektor Chatterbox V3, trzy zakładki modeli, prawdziwy
-> postęp pobierania w MB/GB, sześć wariantów Whisper i odchudzony katalog tłumaczeń.
+> Status: `v0.5.5` — naprawione lokalne uruchamianie modeli Whisper i lektora
+> Chatterbox V3 na Windows; pobrane wcześniej wagi nie wymagają ponownego pobierania.
 
 ## Najważniejsze funkcje
 
@@ -156,7 +156,7 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-Instalator v0.5.4 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+Instalator v0.5.5 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
 RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
 PyTorch. PolySub po wykryciu zgodnej karty sam dobiera jej architekturę, w tle pobiera własne
 odizolowane środowisko Python oraz oficjalny PyTorch ROCm 7.14, a następnie wykonuje prawdziwe
@@ -256,9 +256,9 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 1. Otwórz [najnowszą wersję PolySub Translator](https://github.com/FgSousace/PolySub-Translator/releases/latest).
 2. W sekcji **Assets** wybierz jeden z dwóch wariantów:
-   - `PolySub-Translator-Setup-0.5.4.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
-   - `PolySub-Translator-Installer-0.5.4.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
-3. Uruchom `PolySub-Translator-Setup-0.5.4.exe` i wybierz katalog instalacji.
+   - `PolySub-Translator-Setup-0.5.5.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
+   - `PolySub-Translator-Installer-0.5.5.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
+3. Uruchom `PolySub-Translator-Setup-0.5.5.exe` i wybierz katalog instalacji.
 4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
 5. Po instalacji kreator pokaże krótką instrukcję, opcję uruchomienia programu oraz opcjonalne
    pole **Wybierz i pobierz modele AI**.
@@ -290,7 +290,7 @@ zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie j
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.4 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.5 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 

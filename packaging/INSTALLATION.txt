@@ -1,11 +1,11 @@
-POLYSUB TRANSLATOR™ 0.5.4 — INSTALACJA NA WINDOWS
+POLYSUB TRANSLATOR™ 0.5.5 — INSTALACJA NA WINDOWS
 ==========================================
 
 Autor: fgSousace
 Dozwolony użytek osobisty i niekomercyjny. Użytek komercyjny wymaga osobnej
 zgody autora. Pełne warunki znajdują się w LICENSE.txt i NOTICE.txt.
 
-1. Uruchom plik PolySub-Translator-Setup-0.5.4.exe.
+1. Uruchom plik PolySub-Translator-Setup-0.5.5.exe.
 2. Wybierz folder, w którym ma zostać zainstalowany program.
 3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
 4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator™.

@@ -105,6 +105,42 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
     assert statuses[-1] == "Zapisywanie rozpoznanych napisów SRT..."
 
 
+def test_transcription_passes_local_whisper_snapshot_as_string(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "local-model.mp4"
+    video.write_bytes(b"video")
+    model_directory = tmp_path / "models--Systran--faster-whisper-large-v2" / "snapshot"
+    model_directory.mkdir(parents=True)
+    monkeypatch.setattr(
+        "polysub.video.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    )
+
+    segment = SimpleNamespace(start=0.0, end=1.0, text=" Lokalny model działa.", words=[])
+    info = SimpleNamespace(duration=1.0, language="pl")
+    model_calls = []
+
+    class FakeModel:
+        def transcribe(self, *_args, **_kwargs):
+            return iter([segment]), info
+
+    def model_factory(model_source, **kwargs):
+        model_calls.append((model_source, kwargs))
+        return FakeModel()
+
+    result = VideoSubtitleImporter(
+        model_size=model_directory,
+        model_name="Whisper Large v2",
+        ffmpeg_executable="ffmpeg",
+        model_factory=model_factory,
+    ).import_video(video)
+
+    model_source, model_kwargs = model_calls[0]
+    assert model_source == str(model_directory)
+    assert isinstance(model_source, str)
+    assert model_kwargs["local_files_only"] is True
+    assert result.document.cues[0].text == "Lokalny model działa."
+
+
 def test_transcription_uses_selected_gpu_index(tmp_path, monkeypatch) -> None:
     video = tmp_path / "gpu-dialogue.mp4"
     video.write_bytes(b"video")

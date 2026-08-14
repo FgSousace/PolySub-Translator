@@ -1,13 +1,13 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.5.4 • autor: fgSousace • użytek niekomercyjny**
+**Wersja 0.5.5 • autor: fgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
 
 ## 1. Instalacja
 
-1. Pobierz `PolySub-Translator-Setup-0.5.4.exe` z oficjalnej strony GitHub Releases.
+1. Pobierz `PolySub-Translator-Setup-0.5.5.exe` z oficjalnej strony GitHub Releases.
 2. Uruchom instalator, wybierz folder i kliknij **Instaluj**.
 3. Przy pierwszym uruchomieniu otwórz **Pobierz / usuń…** i pobierz co najmniej
    jeden model lokalny albo wybierz silnik DeepL i wpisz swój klucz API.

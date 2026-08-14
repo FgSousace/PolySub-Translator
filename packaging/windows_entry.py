@@ -252,13 +252,15 @@ def main() -> None:
         return
 
     if "--self-test-video" in sys.argv:
+        from types import SimpleNamespace
+
         import av
         import ctranslate2
         import faster_whisper
         import imageio_ffmpeg
         import onnxruntime
 
-        from polysub.video import VideoSubtitleBurner, VideoSubtitleMuxer
+        from polysub.video import VideoSubtitleBurner, VideoSubtitleImporter, VideoSubtitleMuxer
 
         ffmpeg_executable = Path(imageio_ffmpeg.get_ffmpeg_exe())
         if not ffmpeg_executable.is_file():
@@ -317,6 +319,40 @@ def main() -> None:
             )
             if not burned.output_path.is_file() or burned.output_path.stat().st_size == 0:
                 raise RuntimeError("Test wypalania napisów nie utworzył filmu.")
+
+            local_whisper = temporary / "local-whisper-snapshot"
+            local_whisper.mkdir()
+            segment = SimpleNamespace(
+                start=0.0,
+                end=0.8,
+                text=" Test lokalnego Whispera.",
+                words=[],
+            )
+            info = SimpleNamespace(duration=1.0, language="pl")
+
+            class FakeWhisperModel:
+                def transcribe(self, *_args, **_kwargs):
+                    return iter([segment]), info
+
+            def fake_whisper_factory(model_source, **model_kwargs):
+                if model_source != str(local_whisper) or not isinstance(model_source, str):
+                    raise RuntimeError("Lokalna ścieżka Whisper nie została przekazana jako tekst.")
+                if model_kwargs.get("local_files_only") is not True:
+                    raise RuntimeError("Lokalny Whisper nie został uruchomiony w trybie offline.")
+                return FakeWhisperModel()
+
+            transcribed = VideoSubtitleImporter(
+                model_size=local_whisper,
+                model_name="Whisper self-test",
+                ffmpeg_executable=str(ffmpeg_executable),
+                model_factory=fake_whisper_factory,
+            ).import_video(source_video)
+            if (
+                transcribed.method != "transcribed"
+                or not transcribed.subtitle_path.is_file()
+                or not transcribed.document.cues
+            ):
+                raise RuntimeError("Test lokalnej ścieżki Whisper nie utworzył napisów.")
 
         # Validate the bundled video stack without downloading a speech model.
         _ = (av, ctranslate2, faster_whisper, onnxruntime)
