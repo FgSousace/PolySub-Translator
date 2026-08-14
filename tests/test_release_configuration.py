@@ -25,7 +25,7 @@ def test_version_is_consistent_in_python_project_and_installer() -> None:
     numeric_version = ", ".join(__version__.split(".")) + ", 0"
 
     assert project["project"]["version"] == __version__
-    assert __version__ == "0.5.3"
+    assert __version__ == "0.5.4"
     assert installer_version is not None
     assert installer_version.group(1) == __version__
     assert "OutputBaseFilename=PolySub-Translator-Setup-{#MyAppVersion}" in installer
@@ -64,7 +64,12 @@ def test_windows_package_avoids_upx_and_scans_release_with_defender() -> None:
 def test_historical_release_notes_are_separate_and_version_specific() -> None:
     notes_dir = PROJECT_ROOT / "packaging" / "release-notes"
     notes = sorted(notes_dir.glob("v*.md"))
-    expected = {f"v0.4.{minor}" for minor in range(1, 10)} | {"v0.5.0", "v0.5.1", "v0.5.2"}
+    expected = {f"v0.4.{minor}" for minor in range(1, 10)} | {
+        "v0.5.0",
+        "v0.5.1",
+        "v0.5.2",
+        "v0.5.3",
+    }
 
     assert {path.stem for path in notes} == expected
     for path in notes:

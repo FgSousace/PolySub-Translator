@@ -1,19 +1,19 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.5.3 • autor: fgSousace • użytek niekomercyjny**
+**Wersja 0.5.4 • autor: fgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
 
 ## 1. Instalacja
 
-1. Pobierz `PolySub-Translator-Setup-0.5.3.exe` z oficjalnej strony GitHub Releases.
+1. Pobierz `PolySub-Translator-Setup-0.5.4.exe` z oficjalnej strony GitHub Releases.
 2. Uruchom instalator, wybierz folder i kliknij **Instaluj**.
 3. Przy pierwszym uruchomieniu otwórz **Pobierz / usuń…** i pobierz co najmniej
    jeden model lokalny albo wybierz silnik DeepL i wpisz swój klucz API.
 
-Instalator zawiera aplikację, FFmpeg i biblioteki NVIDIA. Nie zawiera wag 20
-modeli tłumaczeniowych — każdy z nich jest opcjonalnym dodatkiem.
+Instalator zawiera aplikację, FFmpeg i biblioteki NVIDIA. Nie zawiera wag modeli
+tłumaczenia, Whispera ani Chatterbox — każdy z nich jest opcjonalnym dodatkiem.
 
 ## 2. Obsługiwane pliki wejściowe
 
@@ -64,10 +64,17 @@ zostają połączone, a napisy nie powstają jeden na drugim.
 
 ## 6. Modele AI
 
-Główne pole **Model lokalnego AI** zawiera tylko modele, których pobieranie jest
-ukończone. Pełny katalog 20 modeli znajduje się w **Pobierz / usuń…**. Menedżer
-pokazuje rozmiar, wymagania, zakres języków, licencję i stan plików. Nieukończony
-model nie może zostać przypadkowo uruchomiony.
+Główne pola wyboru zawierają tylko modele, których pobieranie jest ukończone.
+Menedżer **Pobierz / usuń…** ma trzy zakładki: **Tłumaczenie**, **Whisper** i
+**Lektor**. Pokazuje rozmiar, dokładność 1–5, najlepsze zastosowanie, wymagania,
+licencję i stan plików. Podczas pobierania widoczny jest procent oraz liczba
+zapisanych MB/GB. Nieukończony model nie może zostać przypadkowo uruchomiony.
+
+Katalog tłumaczeń jest ograniczony do modeli od około 300 MB do 5,5 GB. Modele
+11,9–43 GB usunięto z listy, ponieważ na typowym komputerze zajmowały nieproporcjonalnie
+dużo miejsca i pamięci. Ocena 1–5 jest praktyczną wskazówką dla napisów, a nie
+gwarancją wyniku dla każdego filmu. Wyspecjalizowany OPUS może być najlepszy dla
+swojej jednej pary językowej.
 
 Jeżeli Windows zgłosi niedostępny lub niezaufany punkt w pamięci Hugging Face,
 PolySub pominie wadliwą kopię zamiast zamykać aplikację. Model otrzyma stan
@@ -104,11 +111,33 @@ Po przetłumaczeniu napisów filmu możesz wybrać:
   czasem trzeba włączyć w VLC lub telewizorze;
 - **Wypal napisy na obrazie — TV** — napisy są częścią każdej klatki i zawsze
   widoczne, ale film musi zostać ponownie zakodowany.
+- **Utwórz film z polskim lektorem** — Chatterbox czyta polskie kwestie jednym
+  głosem, a oryginalna ścieżka pozostaje w tle ze zmniejszoną głośnością.
+
+### Polski lektor Chatterbox
+
+1. Przetłumacz napisy filmu na polski.
+2. W menedżerze, w zakładce **Lektor**, pobierz Chatterbox Multilingual V3
+   (około 3,25 GB). Pobierane są wyłącznie pliki potrzebne wariantowi V3.
+3. Kliknij **Utwórz film z polskim lektorem** i wskaż wynikowy plik MKV.
+
+Program czyta wszystkie kwestie jednym wbudowanym głosem, zachowuje ich timestampy,
+umiarkowanie przyspiesza zbyt długie kwestie i miksuje mowę z oryginałem ściszonym
+do 28%. Obraz jest kopiowany bez utraty jakości. Przy pierwszym użyciu Windows tworzy
+prywatne środowisko Chatterbox z PyTorch 2.6, odizolowane od środowiska NVIDIA i AMD
+aplikacji. Synteza V3 działa obecnie na CPU, dlatego długi film może powstawać dłużej
+niż trwa jego odtworzenie; używa limitu procesora wybranego w głównym oknie.
+Chatterbox dodaje do wygenerowanego dźwięku swój
+neuronowy znak wodny.
 
 ## 9. Najczęstsze problemy
 
 - **Nie widzę modelu w głównym oknie:** pobieranie nie jest ukończone; otwórz
   menedżer i wybierz **Wznów/Pobierz**.
+- **Film nie ma napisów, a Whisper nie startuje:** pobierz wybrany wariant w zakładce
+  **Whisper**. Aplikacja nie uruchamia już ukrytego pobierania przy otwieraniu filmu.
+- **Przycisk lektora jest nieaktywny:** gotowe napisy muszą być po polsku, a wejściem
+  musi być film. Jeżeli Chatterbox nie jest pobrany, przycisk otworzy jego zakładkę.
 - **Cache modelu jest niedostępny / WinError 448:** aplikacja nadal się uruchomi.
   Otwórz **Pobierz / usuń…**, usuń oznaczoną kopię i pobierz model ponownie.
 - **GPU jest na liście, ale program wybiera CPU:** karta została wykryta fizycznie,

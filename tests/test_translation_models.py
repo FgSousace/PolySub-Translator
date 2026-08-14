@@ -12,6 +12,15 @@ def test_catalog_contains_exactly_twenty_ranked_unique_models() -> None:
     assert [model.rank for model in MODEL_CATALOG] == list(range(1, 21))
     assert len({model.id for model in MODEL_CATALOG}) == 20
     assert len({model.repo_id for model in MODEL_CATALOG}) == 20
+    assert max(model.download_gb for model in MODEL_CATALOG) <= 5.5
+    assert all(1 <= model.accuracy_score <= 5 for model in MODEL_CATALOG)
+    assert all(model.best_for for model in MODEL_CATALOG)
+
+
+def test_oversized_models_are_not_offered_but_legacy_madlad_remains_readable() -> None:
+    assert all(model.download_gb < 10 for model in MODEL_CATALOG)
+    assert all(not model.id.startswith("madlad400") for model in MODEL_CATALOG)
+    assert get_model_spec("madlad400-3b").family is ModelFamily.MADLAD
 
 
 def test_default_model_preserves_previous_m2m100_behavior() -> None:
@@ -40,4 +49,3 @@ def test_nllb_and_mbart_language_tokens_are_resolved() -> None:
     assert nllb.target_token("pl") == "pol_Latn"
     assert mbart.source_token("en") == "en_XX"
     assert mbart.target_token("pl") == "pl_PL"
-

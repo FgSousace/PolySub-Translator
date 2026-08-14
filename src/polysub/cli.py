@@ -9,6 +9,8 @@ from .detector import LanguageDetectionError, detect_language
 from .engines import DeepLEngine, TranslationEngineError, create_local_engine
 from .model_downloads import ModelDownloadError, download_model, model_status
 from .models import TranslationMode
+from .narrator import ChatterboxNarrator, NarrationError, narrator_video_output_path
+from .narrator_models import CHATTERBOX_MULTILINGUAL_V3
 from .performance import CPU_USAGE_OPTIONS, DEFAULT_CPU_USAGE
 from .service import TranslationOptions, TranslationService
 from .subtitle_timing import (
@@ -32,6 +34,7 @@ from .video import (
     format_media_duration,
     translated_video_subtitle_path,
 )
+from .whisper_models import WHISPER_MODEL_CATALOG
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,9 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-resume", action="store_true", help="Nie używaj zapisu awaryjnego")
     parser.add_argument(
         "--speech-model",
-        choices=("small", "medium"),
+        choices=tuple(model.runtime_alias for model in WHISPER_MODEL_CATALOG),
         default="medium",
-        help="Model Whisper używany tylko wtedy, gdy film nie ma tekstowych napisów",
+        help="Pobrany model Whisper używany, gdy film nie ma tekstowych napisów",
     )
     parser.add_argument(
         "--cpu-limit",
@@ -119,6 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Wypal napisy na obrazie filmu, próbując najpierw akceleracji sprzętowej",
     )
+    video_output_mode.add_argument(
+        "--polish-narrator",
+        action="store_true",
+        help="Utwórz jeden polski głos Chatterbox i zmiksuj go z cichszym oryginałem",
+    )
     parser.add_argument(
         "--video-output",
         type=Path,
@@ -149,8 +157,13 @@ def main(argv: list[str] | None = None) -> int:
         media_path: Path | None = None
         if args.input.suffix.lower() in VIDEO_EXTENSIONS:
             media_path = args.input
+            whisper_model = next(
+                model for model in WHISPER_MODEL_CATALOG if model.runtime_alias == args.speech_model
+            )
+            whisper_status = model_status(whisper_model)
             imported = VideoSubtitleImporter(
-                model_size=args.speech_model,
+                model_size=whisper_status.snapshot_path,
+                model_name=whisper_model.display_name,
                 cpu_usage_limit=args.cpu_limit,
             ).import_video(
                 args.input,
@@ -254,6 +267,31 @@ def main(argv: list[str] | None = None) -> int:
             )
             print()
             print(f"Film z trwałymi napisami: {burned.output_path} ({burned.encoder})")
+        elif args.polish_narrator:
+            if media_path is None:
+                raise NarrationError("Opcja --polish-narrator wymaga filmu wejściowego.")
+            if target != "pl":
+                raise NarrationError("Polski lektor wymaga języka docelowego --target pl.")
+            chatterbox_status = model_status(CHATTERBOX_MULTILINGUAL_V3)
+            if chatterbox_status.snapshot_path is None:
+                raise NarrationError(
+                    "Chatterbox Multilingual V3 nie jest pobrany. Uruchom --manage-models "
+                    "i pobierz go w zakładce Lektor."
+                )
+            video_output = args.video_output or narrator_video_output_path(media_path)
+            narrated = ChatterboxNarrator().render(
+                media_path,
+                output,
+                chatterbox_status.snapshot_path,
+                output_path=video_output,
+                cpu_usage_limit=args.cpu_limit,
+                status=print,
+                progress=lambda done, total: print(
+                    f"\rLektor: {done} z {total} kwestii", end="", flush=True
+                ),
+            )
+            print()
+            print(f"Film z polskim lektorem: {narrated.output_path}")
         return 0
     except (
         OSError,
@@ -265,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         VideoBurnError,
         VideoImportError,
         VideoMuxError,
+        NarrationError,
     ) as exc:
         print(f"Błąd: {exc}", file=sys.stderr)
         return 1
@@ -311,13 +350,26 @@ def _create_engine(
 
 
 def _print_model_catalog() -> None:
-    print("20 opcjonalnych modeli AI (ranking orientacyjny):")
+    print(f"{len(MODEL_CATALOG)} opcjonalnych modeli tłumaczeniowych:")
     for model in MODEL_CATALOG:
         state = model_status(model).status_label
         print(
             f"{model.rank:02d}. {model.id:<29} {model.display_name:<33} "
-            f"{model.size_label:>8}  {model.license_name:<20} {state}"
+            f"{model.size_label:>8}  {model.accuracy_score}/5  "
+            f"{model.license_name:<20} {state}"
         )
+    print("\nModele rozpoznawania mowy Whisper:")
+    for model in WHISPER_MODEL_CATALOG:
+        print(
+            f"{model.rank:02d}. {model.runtime_alias:<12} {model.display_name:<25} "
+            f"{model.size_label:>8}  {model.accuracy_score}/5  {model_status(model).status_label}"
+        )
+    print("\nPolski lektor:")
+    model = CHATTERBOX_MULTILINGUAL_V3
+    print(
+        f"{model.display_name}  {model.size_label}  "
+        f"{model.accuracy_score}/5  {model_status(model).status_label}"
+    )
 
 
 def _ask_target() -> str:

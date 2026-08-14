@@ -10,9 +10,8 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.5.3` — automatyczna akceleracja zgodnych Radeonów i NVIDIA, odporne
-> skanowanie modeli, paczka bez UPX, anulowanie z bezpiecznym wznowieniem oraz tylko gotowe
-> modele w GUI.
+> Status: `v0.5.4` — polski lektor Chatterbox V3, trzy zakładki modeli, prawdziwy
+> postęp pobierania w MB/GB, sześć wariantów Whisper i odchudzony katalog tłumaczeń.
 
 ## Najważniejsze funkcje
 
@@ -20,11 +19,15 @@ niejasnych fragmentów.
 - dodatkowy import MP4/MKV/MOV/M4V/AVI/WebM bez usuwania obsługi SRT;
 - wyciąganie pierwszej tekstowej ścieżki napisów z filmu;
 - lokalne rozpoznawanie mowy przez Whisper, gdy film nie zawiera napisów;
+- sześć zarządzanych wariantów Whisper od Tiny do Large v3;
+- jeden polski głos lektora Chatterbox V3 zmiksowany ze ściszonym oryginałem;
 - szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
 - wypalanie napisów na stałe w obrazie filmu z automatyczną akceleracją NVIDIA, Intel lub AMD;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
-- katalog 20 lokalnych modeli AI z pobieraniem, usuwaniem i kontrolą zgodności języków;
-- lokalne silniki MADLAD-400, NLLB-200, M2M100, mBART-50 i OPUS albo DeepL API;
+- katalog 20 modeli tłumaczeń od około 300 MB do 5,5 GB;
+- osobne zakładki Tłumaczenie, Whisper i Lektor z dokładnością 1–5;
+- prawdziwy postęp pobierania: procent oraz zapisane MB/GB;
+- lokalne silniki NLLB-200, M2M100, mBART-50 i OPUS albo DeepL API;
 - dynamiczna lista rzeczywiście wykrytych procesorów i kart NVIDIA, AMD oraz Intel;
 - tryb Auto wybierający najlepszy zgodny backend z bezpiecznym powrotem na CPU;
 - automatyczne pobieranie właściwego środowiska ROCm dla zgodnego Radeona bez osobnego przycisku;
@@ -91,14 +94,17 @@ konflikt zamiast przesunąć dialog, połączyć postacie albo stworzyć nakład
 
 | Silnik | Internet | Klucz | Obsługa języków | Uwagi |
 |---|---:|---:|---|---|
-| **20 lokalnych modeli AI** | tylko przy pobieraniu dodatku | nie | zależnie od modelu | Działają lokalnie; użytkownik sam wybiera i usuwa modele. |
+| **20 modeli tłumaczeń** | tylko przy pobieraniu dodatku | nie | zależnie od modelu | Działają lokalnie; największy ma około 5,5 GB. |
 | **DeepL API** | tak | tak | zgodnie z aktualną ofertą API | Lepszy kontekst i jakość dla obsługiwanych par językowych. |
+| **Whisper (6 wariantów)** | tylko przy pobieraniu | nie | mowa wielojęzyczna | Lokalna transkrypcja od Tiny do Large v3. |
+| **Chatterbox V3** | tylko przy pobieraniu | nie | polski lektor | Jeden głos na tle oryginalnej ścieżki. |
 
 ## Modele AI jako opcjonalne dodatki
 
-Przycisk **Pobierz / usuń…** otwiera menedżer modeli. Żaden model tłumaczeniowy nie jest
-wciskany do instalatora: użytkownik widzi szacowany rozmiar, wymagania RAM/VRAM i licencję, a
-dopiero po potwierdzeniu pliki są pobierane z oficjalnego repozytorium Hugging Face. Przerwane
+Przycisk **Pobierz / usuń…** otwiera menedżer z zakładkami **Tłumaczenie**, **Whisper**
+i **Lektor**. Żaden model nie jest wciskany do instalatora: użytkownik widzi rozmiar,
+dokładność 1–5, zastosowanie, wymagania i licencję. Pasek pokazuje prawdziwy przyrost
+plików w cache, procent oraz zapisane MB/GB. Przerwane
 pobieranie można wznowić, a każdy model można później usunąć bez naruszania pozostałych.
 Główne pole wyboru celowo pokazuje tylko modele, których stan to **Pobrany i gotowy**.
 Nieukończony model pozostaje widoczny wyłącznie w menedżerze, gdzie można wznowić pobieranie.
@@ -109,32 +115,21 @@ menedżer pokazuje stan **Cache niedostępny** i pozwala usunąć model przed po
 Na Windows nowe pobrania domyślnie korzystają z oficjalnego trybu Hugging Face bez symlinków,
 aby nie odtwarzać problematycznego punktu instalacji.
 
-Kolejność 1–20 jest orientacyjnym rankingiem ogólnej jakości, a nie gwarancją dla każdego języka.
-Mały OPUS wyspecjalizowany w jednej parze może wypaść lepiej od większego modelu ogólnego właśnie
-dla tej pary.
+Ocena 1–5 jest praktyczną wskazówką dla napisów, a nie gwarancją dla każdego filmu.
+Mały OPUS wyspecjalizowany w jednej parze może wypaść lepiej od większego modelu ogólnego.
+Modele 11,9–43 GB usunięto z oferty, aby katalog był realny dla zwykłego komputera.
 
-| # | Model | Pobieranie | Przeznaczenie | Licencja modelu |
-|---:|---|---:|---|---|
-| 1 | MADLAD-400 10B | ok. 43 GB | najwyższa jakość ogólna, bardzo mocny komputer | Apache-2.0 |
-| 2 | MADLAD-400 7B | ok. 33,3 GB | najwyższa jakość ogólna | Apache-2.0 |
-| 3 | MADLAD-400 3B | ok. 11,9 GB | bardzo wysoka jakość ogólna | Apache-2.0 |
-| 4 | NLLB-200 3.3B | ok. 17,6 GB | bardzo wysoka, 196 języków | CC-BY-NC-4.0 |
-| 5 | NLLB-200 Distilled 1.3B | ok. 5,5 GB | wysoka, lżejszy NLLB | CC-BY-NC-4.0 |
-| 6 | NLLB-200 1.3B | ok. 5,5 GB | wysoka, 196 języków | CC-BY-NC-4.0 |
-| 7 | M2M100 1.2B | ok. 4,9 GB | wysoka, około 100 języków | MIT |
-| 8 | NLLB-200 Distilled 600M | ok. 2,5 GB | dobry kompromis rozmiaru i jakości | CC-BY-NC-4.0 |
-| 9 | mBART-50 Many-to-Many | ok. 2,5 GB | tłumaczenie między 50 językami | sprawdź kartę modelu |
-| 10 | M2M100 418M | ok. 1,9 GB | domyślny i zgodny ze starszym PolySub | MIT |
-| 11 | mBART-50 English-to-Many | ok. 2,5 GB | angielski → obsługiwane języki | sprawdź kartę modelu |
-| 12 | mBART-50 Many-to-English | ok. 2,5 GB | obsługiwane języki → angielski | sprawdź kartę modelu |
-| 13 | OPUS English → Polish | ok. 320 MB | tylko angielski → polski | Apache-2.0 |
-| 14 | OPUS Polish → English | ok. 320 MB | tylko polski → angielski | Apache-2.0 |
-| 15 | OPUS German → Polish | ok. 320 MB | tylko niemiecki → polski | Apache-2.0 |
-| 16 | OPUS Spanish → Polish | ok. 320 MB | tylko hiszpański → polski | Apache-2.0 |
-| 17 | OPUS French → Polish | ok. 320 MB | tylko francuski → polski | Apache-2.0 |
-| 18 | OPUS Ukrainian → Polish | ok. 320 MB | tylko ukraiński → polski | Apache-2.0 |
-| 19 | OPUS Arabic → Polish | ok. 320 MB | tylko arabski → polski | Apache-2.0 |
-| 20 | OPUS Japanese → Polish | ok. 320 MB | tylko japoński → polski | Apache-2.0 |
+| # | Model | Pobieranie | Dokładność | Najlepsze zastosowanie |
+|---:|---|---:|---:|---|
+| 1 | NLLB-200 Distilled 1.3B | 5,5 GB | 5/5 | najlepszy balans ogólny dla wielu języków |
+| 2 | NLLB-200 1.3B | 5,5 GB | 5/5 | wielojęzyczna jakość ponad szybkość |
+| 3 | M2M100 1.2B | 4,9 GB | 4/5 | uniwersalne tłumaczenie około 100 języków |
+| 4 | NLLB-200 Distilled 600M | 2,5 GB | 4/5 | szybszy kompromis wielojęzyczny |
+| 5 | mBART-50 Many-to-Many | 2,5 GB | 4/5 | tłumaczenie między 50 językami |
+| 6 | M2M100 418M | 1,9 GB | 3/5 | lekki model ogólny i zgodność wsteczna |
+| 7 | mBART-50 English-to-Many | 2,5 GB | 3/5 | angielski → pozostałe obsługiwane języki |
+| 8 | mBART-50 Many-to-English | 2,5 GB | 3/5 | obsługiwane języki → angielski |
+| 9–20 | 12 modeli OPUS | 300–320 MB | 2–5/5 | konkretne pary, m.in. EN/DE/ES/FR/UK/LT/NO/JA/AR→PL oraz PL→EN/DE/ES |
 
 Modele NLLB są opublikowane jako modele badawcze na licencji **CC-BY-NC-4.0**, czyli do użytku
 niekomercyjnego. Menedżer pokazuje tę informację przed pobraniem. Szczegółowe warunki zawsze
@@ -155,7 +150,7 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-Instalator v0.5.3 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+Instalator v0.5.4 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
 RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
 PyTorch. PolySub po wykryciu zgodnej karty sam dobiera jej architekturę, w tle pobiera własne
 odizolowane środowisko Python oraz oficjalny PyTorch ROCm 7.14, a następnie wykonuje prawdziwe
@@ -195,16 +190,32 @@ Dotychczasowy wybór `.srt` działa tak samo jak wcześniej. Dodatkowo można ws
 3. Program wykrywa język utworzonego tekstu.
 4. Użytkownik wybiera język docelowy i zwykły tryb tłumaczenia.
 5. Wynik zostaje zapisany obok filmu, np. jako `film.pl.srt`.
-6. Na końcu można wybrać szybkie dodanie przełączanej ścieżki albo wypalenie napisów na stałe
-   w obrazie filmu.
+6. Na końcu można dodać przełączane napisy, wypalić je na stałe albo utworzyć
+   jeden polski głos lektora.
 
 Do ekstrakcji używany jest FFmpeg dołączony do aplikacji, więc nie trzeba instalować go ręcznie.
-Rozpoznawanie mowy działa lokalnie i oferuje wariant **small** (szybszy) oraz **medium**
-(dokładniejszy, ustawiony domyślnie). Model Whisper pobiera się tylko przy pierwszym użyciu danego
-wariantu i pozostaje w pamięci podręcznej Windows.
+Rozpoznawanie mowy działa lokalnie i oferuje sześć wielojęzycznych wariantów:
+**Tiny**, **Base**, **Small**, **Medium**, **Large v2** i **Large v3**. Warianty mają
+ocenę 1–5; główne okno pokazuje tylko pobrane modele, więc otwarcie filmu nie uruchamia
+już niewidocznego pobierania. Dokładniejsze dekodowanie używa wiązki 7, cierpliwości 1,2,
+dopasowanego VAD i progów ograniczających halucynacje.
 
 > Whisper rozpoznaje wypowiedziane słowa i ich czas, ale nie zna automatycznie imion ani płci
 > rozmówców. Do takich przypadków nadal służą informacje o postaciach i tryb weryfikacji.
+
+### Polski lektor Chatterbox V3
+
+Po przygotowaniu polskich napisów przycisk **Utwórz film z polskim lektorem** czyta
+wszystkie kwestie jednym głosem Chatterbox Multilingual V3. Głos jest układany według
+timestampów, a oryginalna ścieżka zostaje w tle ze zmniejszoną głośnością 28%.
+Obraz jest kopiowany bez ponownego kodowania do osobnego pliku `film.pl.narrator.mkv`.
+
+Model ma około 3,25 GB i jest pobierany w zakładce **Lektor**. PolySub pobiera tylko
+sześć plików potrzebnych wersji V3, nie całe repozytorium z historycznymi wagami.
+Przy pierwszym użyciu Windows przygotowuje prywatne środowisko Chatterbox/PyTorch 2.6,
+odizolowane od CUDA i ROCm aplikacji. Synteza działa obecnie na CPU i respektuje wybrany
+limit wykorzystania procesora. Wygenerowane audio
+zawiera znak wodny Perth dodawany przez Chatterbox.
 
 ### Szybkie dołączanie napisów do filmu
 
@@ -239,9 +250,9 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 1. Otwórz [najnowszą wersję PolySub Translator](https://github.com/FgSousace/PolySub-Translator/releases/latest).
 2. W sekcji **Assets** wybierz jeden z dwóch wariantów:
-   - `PolySub-Translator-Setup-0.5.3.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
-   - `PolySub-Translator-Installer-0.5.3.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
-3. Uruchom `PolySub-Translator-Setup-0.5.3.exe` i wybierz katalog instalacji.
+   - `PolySub-Translator-Setup-0.5.4.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
+   - `PolySub-Translator-Installer-0.5.4.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
+3. Uruchom `PolySub-Translator-Setup-0.5.4.exe` i wybierz katalog instalacji.
 4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
 5. Po instalacji kreator pokaże krótką instrukcję, opcję uruchomienia programu oraz opcjonalne
    pole **Wybierz i pobierz modele AI**.
@@ -267,13 +278,13 @@ sam — pobieranie rozpoczyna się dopiero po kliknięciu przycisku przez użytk
 ### Pierwsze tłumaczenie lokalne
 
 Plik programu `.exe` zawiera silnik potrzebny do uruchomienia aplikacji, ale nie zawiera dużych
-wag językowych. Otwórz **Pobierz / usuń…**, wybierz jeden z 20 modeli i sprawdź jego wymagania.
-Domyślny M2M100 418M pobiera około 1,9 GB, a najmniejsze modele OPUS około 320 MB. Wybrany model
+wag modeli. Otwórz **Pobierz / usuń…**, wybierz zakładkę i model. Domyślny
+M2M100 418M pobiera około 1,9 GB, a najmniejsze modele OPUS około 300 MB. Wybrany model
 zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie jest pobierany ponownie.
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.3 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.4 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 
@@ -323,17 +334,17 @@ polysub-gui
 ```
 
 1. Kliknij **Wyszukaj napisy w filmie lub wybierz plik** i wskaż SRT albo film.
-2. Dla filmu bez napisów wybierz szybszy lub dokładniejszy wariant Whisper.
+2. Dla filmu bez napisów pobierz i wybierz jeden z sześciu wariantów Whisper.
 3. Sprawdź automatycznie wykryty język i wybierz język docelowy.
-4. Wybierz lokalny AI albo DeepL API; przyciskiem **Pobierz / usuń…** zarządzaj 20 modelami.
+4. Wybierz lokalny AI albo DeepL API; przyciskiem **Pobierz / usuń…** zarządzaj
+   tłumaczeniami, Whisperem i Chatterbox.
 5. Zaznacz wymagany checkbox **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
 6. Zostaw **Automatycznie** albo wybierz wykryty procesor lub kartę graficzną.
 7. Wybierz limit wykorzystania procesora; domyślne 100% daje maksymalną wydajność.
 8. Wybierz czas napisów; domyślne **Automatyczna czytelność — zalecane** nie dopuszcza nakładania.
 9. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
 10. Rozpocznij tłumaczenie; w razie potrzeby użyj **Anuluj tłumaczenie**, aby zachować postęp.
-11. Dla filmu wybierz **Dodaj przełączaną ścieżkę — szybko** albo
-    **Wypal napisy na obrazie — TV**.
+11. Dla filmu dodaj przełączane napisy, wypal je na obrazie albo utwórz polskiego lektora.
 
 Wynik tłumaczenia otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw
 otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowych napisów.
@@ -341,7 +352,7 @@ otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowy
 ### Terminal
 
 ```powershell
-# Wyświetlenie rankingu, rozmiarów, licencji i stanu 20 modeli
+# Wyświetlenie tłumaczeń, Whispera i lektora wraz z dokładnością i stanem
 polysub --list-models
 
 # Lokalnie: automatyczne wykrycie angielskiego i tłumaczenie na polski
@@ -369,6 +380,9 @@ polysub film.mp4 --target pl --engine local --attach-to-video
 
 # Film z polskimi napisami wypalonymi na stałe i pełnym limitem CPU
 polysub film.mp4 --target pl --engine local --burn-into-video --cpu-limit 100
+
+# Jeden polski głos Chatterbox na tle ściszonego oryginału
+polysub film.mp4 --target pl --engine local --polish-narrator
 ```
 
 Uruchomienie `polysub` bez parametrów otwiera GUI.
@@ -394,6 +408,7 @@ tekst źródłowy nie zawiera wymaganej informacji.
 - napisy wyciągnięte lub rozpoznane z filmu są zapisywane w osobnym pliku roboczym `.srt`;
 - film z dołączonymi napisami zawsze jest zapisywany jako osobny plik `.mp4` albo `.mkv`;
 - film z napisami wypalonymi na obrazie również powstaje jako osobny plik;
+- film z lektorem powstaje jako osobny plik MKV i nie zmienia oryginału;
 - liczba kwestii, identyfikatory i początki wypowiedzi są sprawdzane przed zapisem;
 - profile czytelności nigdy nie przedłużają starego napisu na początek następnej wypowiedzi;
 - niedokończone zadanie trafia do pliku `*.srt.polysub.json`;
@@ -409,8 +424,8 @@ pytest
 ```
 
 GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12. Workflow Windows buduje
-`Setup.exe`, instaluje go w czystym katalogu, sprawdza dołączony README, katalog 20 modeli, profile
-czasu bez nakładania, oba sposoby dodawania napisów, ustawienia CPU, biblioteki CUDA/cuDNN, GUI,
+`Setup.exe`, instaluje go w czystym katalogu, sprawdza trzy katalogi modeli, workera lektora,
+profile czasu, sposoby dodawania napisów, ustawienia CPU, biblioteki CUDA/cuDNN i GUI,
 deinstalator i zawartość ZIP-a,
 a dopiero potem publikuje pliki w Releases.
 
@@ -421,7 +436,9 @@ src/polysub/
 ├── engines/       # DeepL i pięć rodzin lokalnych modeli AI
 ├── cli.py         # interfejs terminalowy
 ├── gui.py         # aplikacja desktopowa
-├── translation_models.py # katalog 20 modeli i mapy języków
+├── translation_models.py # lekkie modele tłumaczeń i mapy języków
+├── whisper_models.py     # sześć wariantów rozpoznawania mowy
+├── narrator.py           # Chatterbox, synchronizacja WAV i miks filmu
 ├── model_downloads.py    # bezpieczne pobieranie, wznawianie i usuwanie
 ├── service.py     # tłumaczenie, kontekst, postęp i wznowienie
 ├── performance.py # limity CPU i konfiguracja bibliotek wielowątkowych
