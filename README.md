@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://github.com/FgSousace/PolySub-Translator/releases/latest">
+    <img src="https://img.shields.io/badge/POBIERZ-NAJNOWSZE_WYDANIE-2ea44f?style=for-the-badge&amp;logo=github&amp;logoColor=white" alt="Pobierz najnowsze wydanie PolySub Translator">
+  </a>
+</p>
+
 # PolySub Translator™
 
 **Autor: fgSousace • Copyright © 2026 fgSousace • użytek niekomercyjny**
