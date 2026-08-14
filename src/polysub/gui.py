@@ -51,6 +51,12 @@ from .languages import language_name, language_options, parse_language_option
 from .model_downloads import model_status
 from .model_manager_window import ModelManagerWindow
 from .models import TranslationMode
+from .narrator import (
+    ChatterboxNarrator,
+    NarrationResult,
+    narrator_video_output_path,
+)
+from .narrator_models import CHATTERBOX_MULTILINGUAL_V3
 from .performance import DEFAULT_CPU_USAGE, cpu_allocation
 from .service import TranslationOptions, TranslationService
 from .subtitle_timing import (
@@ -79,6 +85,12 @@ from .video import (
     format_media_duration,
     translated_video_subtitle_path,
 )
+from .whisper_models import (
+    DEFAULT_WHISPER_MODEL_ID,
+    WHISPER_MODEL_CATALOG,
+    WhisperModelSpec,
+    get_whisper_model_spec,
+)
 
 LOCAL_ENGINE_LABEL = "Lokalny AI — wybierz model"
 
@@ -103,10 +115,9 @@ INPUT_FILE_TYPES = (
     ("Wszystkie pliki", "*.*"),
 )
 
-SPEECH_MODEL_LABELS = {
-    "Szybsze — Whisper small": "small",
-    "Dokładniejsze — Whisper medium": "medium",
-}
+WHISPER_LABEL_TO_ID = {model.selection_label: model.id for model in WHISPER_MODEL_CATALOG}
+WHISPER_ID_TO_LABEL = {model.id: model.selection_label for model in WHISPER_MODEL_CATALOG}
+WHISPER_NOT_READY_LABEL = "Brak pobranego Whispera — otwórz menedżer"
 
 CPU_USAGE_LABELS = {
     "100% — maksymalna wydajność": 100,
@@ -583,14 +594,15 @@ class PolySubApp(tk.Tk):
             file_frame,
             text="Gdy film nie ma napisów:",
         ).grid(row=2, column=0, sticky="e", pady=(10, 0), padx=(0, 8))
-        self.speech_model_var = tk.StringVar(value="Dokładniejsze — Whisper medium")
-        ttk.Combobox(
+        self.speech_model_var = tk.StringVar(value=WHISPER_NOT_READY_LABEL)
+        self.speech_model_combo = ttk.Combobox(
             file_frame,
             textvariable=self.speech_model_var,
-            values=list(SPEECH_MODEL_LABELS),
+            values=(WHISPER_NOT_READY_LABEL,),
             state="readonly",
-            width=32,
-        ).grid(row=2, column=1, sticky="e", pady=(10, 0))
+            width=54,
+        )
+        self.speech_model_combo.grid(row=2, column=1, sticky="e", pady=(10, 0))
 
         language_frame = ttk.LabelFrame(container, text="2. Języki", padding=14)
         language_frame.pack(fill="x", pady=12)
@@ -956,6 +968,7 @@ class PolySubApp(tk.Tk):
         self._build_activity_panel()
         self._build_action_bar()
         self._refresh_model_choices()
+        self._refresh_whisper_choices()
         self._update_api_state()
         self._refresh_primary_action()
         if modern:
@@ -1332,6 +1345,9 @@ class PolySubApp(tk.Tk):
         self._update_cpu_usage_description()
         self._update_timing_description()
         self._refresh_model_choices(MODEL_LABEL_TO_ID.get(str(values.get("model_var", ""))))
+        self._refresh_whisper_choices(
+            WHISPER_LABEL_TO_ID.get(str(values.get("speech_model_var", "")))
+        )
         self._refresh_model_status()
         self._restore_device_widgets()
         self._update_attach_button()
@@ -1394,6 +1410,31 @@ class PolySubApp(tk.Tk):
     def _installed_models(self) -> list[TranslationModelSpec]:
         return [model for model in MODEL_CATALOG if model_status(model).installed]
 
+    def _installed_whisper_models(self) -> list[WhisperModelSpec]:
+        return [model for model in WHISPER_MODEL_CATALOG if model_status(model).installed]
+
+    def _refresh_whisper_choices(self, preferred_model_id: str | None = None) -> None:
+        if not hasattr(self, "speech_model_combo"):
+            return
+        current_id = preferred_model_id or WHISPER_LABEL_TO_ID.get(self.speech_model_var.get())
+        installed = self._installed_whisper_models()
+        labels = [model.selection_label for model in installed]
+        self.speech_model_combo.configure(values=labels or (WHISPER_NOT_READY_LABEL,))
+        selected = next((model for model in installed if model.id == current_id), None)
+        if selected is None and installed:
+            selected = next(
+                (model for model in installed if model.id == DEFAULT_WHISPER_MODEL_ID),
+                installed[0],
+            )
+        self.speech_model_var.set(selected.selection_label if selected else WHISPER_NOT_READY_LABEL)
+
+    def _selected_whisper_model(self) -> WhisperModelSpec | None:
+        model_id = WHISPER_LABEL_TO_ID.get(self.speech_model_var.get())
+        if model_id is None:
+            return None
+        model = get_whisper_model_spec(model_id)
+        return model if model_status(model).installed else None
+
     def _refresh_model_choices(self, preferred_model_id: str | None = None) -> None:
         if not hasattr(self, "model_combo"):
             return
@@ -1426,7 +1467,7 @@ class PolySubApp(tk.Tk):
         if model is None:
             self.model_status_var.set(
                 "Brak gotowego modelu lokalnego. Kliknij »Pobierz / usuń…«, "
-                "aby pobrać jeden z 20 modeli AI."
+                f"aby pobrać jeden z {len(MODEL_CATALOG)} modeli AI."
             )
             return
         status = model_status(model)
@@ -1444,10 +1485,11 @@ class PolySubApp(tk.Tk):
             f"{status.status_label} · {model.quality} · {compatibility}."
         )
 
-    def _open_model_manager(self) -> None:
+    def _open_model_manager(self, initial_tab: str = "translation") -> None:
         if self._model_manager_window is not None:
             try:
                 if self._model_manager_window.winfo_exists():
+                    self._model_manager_window.show_tab(initial_tab)
                     self._model_manager_window.lift()
                     self._model_manager_window.focus_force()
                     return
@@ -1456,9 +1498,14 @@ class PolySubApp(tk.Tk):
         self._model_manager_window = ModelManagerWindow(
             self,
             selected_model_id=(self._selected_model() or get_model_spec(DEFAULT_MODEL_ID)).id,
+            selected_whisper_id=(
+                self._selected_whisper_model() or get_whisper_model_spec(DEFAULT_WHISPER_MODEL_ID)
+            ).id,
+            initial_tab=initial_tab,
             source_language=parse_language_option(self.source_var.get()),
             target_language=parse_language_option(self.target_var.get()),
             on_use=self._select_model,
+            on_use_whisper=self._select_whisper_model,
             on_close=self._model_manager_closed,
         )
         self._apply_theme_to_widgets(self._model_manager_window)
@@ -1467,9 +1514,13 @@ class PolySubApp(tk.Tk):
         self._refresh_model_choices(model_id)
         self._refresh_model_status()
 
+    def _select_whisper_model(self, model_id: str) -> None:
+        self._refresh_whisper_choices(model_id)
+
     def _model_manager_closed(self) -> None:
         self._model_manager_window = None
         self._refresh_model_choices()
+        self._refresh_whisper_choices()
         self._refresh_model_status()
 
     def _select_translation_mode(self, mode: TranslationMode) -> None:
@@ -1891,8 +1942,9 @@ class PolySubApp(tk.Tk):
     def _build_action_bar(self) -> None:
         action_frame = ttk.Frame(self, padding=(24, 10, 24, 16))
         action_frame.grid(row=2, column=self._content_column, sticky="ew")
-        action_frame.columnconfigure(0, weight=3)
+        action_frame.columnconfigure(0, weight=1)
         action_frame.columnconfigure(1, weight=1)
+        action_frame.columnconfigure(2, weight=1)
         self.attach_button = ttk.Button(
             action_frame,
             text="Dodaj przełączaną ścieżkę — szybko",
@@ -1907,6 +1959,13 @@ class PolySubApp(tk.Tk):
             state="disabled",
         )
         self.burn_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self.narrator_button = ttk.Button(
+            action_frame,
+            text="Utwórz film z polskim lektorem",
+            command=self._create_narrator,
+            state="disabled",
+        )
+        self.narrator_button.grid(row=0, column=2, sticky="ew", padx=(12, 0))
         self.start_button = ttk.Button(
             action_frame,
             text="Wyszukaj napisy w filmie lub wybierz plik",
@@ -1916,6 +1975,7 @@ class PolySubApp(tk.Tk):
         self.start_button.grid(
             row=1,
             column=0,
+            columnspan=2,
             sticky="ew",
             padx=(0, 6),
             pady=(8, 0),
@@ -1929,7 +1989,7 @@ class PolySubApp(tk.Tk):
         )
         self.cancel_translation_button.grid(
             row=1,
-            column=1,
+            column=2,
             sticky="ew",
             padx=(6, 0),
             pady=(8, 0),
@@ -1939,7 +1999,7 @@ class PolySubApp(tk.Tk):
             text=f"{PRODUCT_NAME} • {COPYRIGHT} • wyłącznie użytek niekomercyjny",
             style="Muted.TLabel",
             anchor="center",
-        ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
     def _build_activity_panel(self) -> None:
         activity = ttk.LabelFrame(self, text="Postęp operacji", padding=(18, 10))
@@ -2169,6 +2229,7 @@ class PolySubApp(tk.Tk):
         self.translated_target_language = None
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
         self.file_var.set(str(selected_path))
         self.file_details_var.set(
             f"Wybrano: {selected_path.name} • format "
@@ -2209,6 +2270,7 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
         self._begin_activity(
             ["Wczytywanie pliku", "Wykrywanie języka", "Przygotowanie dokumentu"],
             f"Otwieranie pliku {subtitle_path.name}",
@@ -2270,6 +2332,7 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
         self._begin_activity(
             [
                 "Analiza filmu",
@@ -2279,12 +2342,15 @@ class PolySubApp(tk.Tk):
             ],
             f"Sprawdzanie filmu {video_path.name}",
         )
-        model_size = SPEECH_MODEL_LABELS[self.speech_model_var.get()]
+        whisper_model = self._selected_whisper_model()
+        whisper_status = model_status(whisper_model) if whisper_model else None
+        model_source = whisper_status.snapshot_path if whisper_status else None
+        model_name = whisper_model.display_name if whisper_model else "niepobrany"
         device_resolution = self._resolve_selected_device("transcription")
         cpu_usage_limit = self._selected_cpu_usage_limit()
         thread = threading.Thread(
             target=self._video_import_worker,
-            args=(video_path, model_size, device_resolution, cpu_usage_limit),
+            args=(video_path, model_source, model_name, device_resolution, cpu_usage_limit),
             daemon=True,
         )
         thread.start()
@@ -2292,7 +2358,8 @@ class PolySubApp(tk.Tk):
     def _video_import_worker(
         self,
         video_path: Path,
-        model_size: str,
+        model_source: Path | None,
+        model_name: str,
         device_resolution: DeviceResolution,
         cpu_usage_limit: int,
     ) -> None:
@@ -2300,7 +2367,8 @@ class PolySubApp(tk.Tk):
             if device_resolution.fallback_reason:
                 self.after(0, self._video_status, device_resolution.fallback_reason)
             importer = VideoSubtitleImporter(
-                model_size=model_size,
+                model_size=model_source,
+                model_name=model_name,
                 device=device_resolution.runtime_device,
                 device_index=device_resolution.device_index,
                 cpu_usage_limit=cpu_usage_limit,
@@ -2524,6 +2592,7 @@ class PolySubApp(tk.Tk):
         self._lock_translation_settings(True)
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
         self.translated_subtitle_path = None
         self.translated_target_language = None
         api_key = self.api_key_var.get()
@@ -2796,6 +2865,144 @@ class PolySubApp(tk.Tk):
         )
         self.attach_button.configure(state="normal" if ready else "disabled")
         self.burn_button.configure(state="normal" if ready else "disabled")
+        narrator_ready = ready and self.translated_target_language == "pl"
+        self.narrator_button.configure(state="normal" if narrator_ready else "disabled")
+
+    def _create_narrator(self) -> None:
+        if (
+            self.media_path is None
+            or self.translated_subtitle_path is None
+            or self.translated_target_language != "pl"
+        ):
+            messagebox.showwarning(
+                "Brak polskich napisów",
+                "Najpierw przetłumacz napisy filmu na język polski.",
+                parent=self,
+            )
+            return
+        chatterbox_status = model_status(CHATTERBOX_MULTILINGUAL_V3)
+        if chatterbox_status.snapshot_path is None:
+            if messagebox.askyesno(
+                "Chatterbox nie jest pobrany",
+                "Do lektora potrzebny jest Chatterbox Multilingual V3 (około 3,25 GB). "
+                "Otworzyć zakładkę Lektor w menedżerze modeli?",
+                parent=self,
+            ):
+                self._open_model_manager("narrator")
+            return
+
+        default_output = narrator_video_output_path(self.media_path)
+        selected = filedialog.asksaveasfilename(
+            parent=self,
+            title="Zapisz film z polskim lektorem",
+            initialdir=str(default_output.parent),
+            initialfile=default_output.name,
+            defaultextension=".mkv",
+            filetypes=[("Film Matroska", "*.mkv")],
+        )
+        if not selected:
+            return
+        if not messagebox.askyesno(
+            "Utworzyć polskiego lektora?",
+            "Chatterbox przeczyta wszystkie polskie kwestie jednym głosem, a oryginalny "
+            "dźwięk zostanie ściszony do 28%. Obraz nie będzie ponownie kodowany.\n\n"
+            "Przy pierwszym użyciu Windows przygotuje dodatkowe, odizolowane środowisko "
+            "Chatterbox. Synteza działa bezpiecznie na CPU i może potrwać dłużej niż film.",
+            parent=self,
+        ):
+            return
+
+        self.file_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.attach_button.configure(state="disabled")
+        self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
+        self._begin_activity(
+            [
+                "Przygotowanie Chatterbox",
+                "Wczytanie głosu",
+                "Synteza kwestii",
+                "Synchronizacja lektora",
+                "Miksowanie dźwięku",
+                "Gotowe",
+            ],
+            "Sprawdzanie modelu i prywatnego środowiska lektora…",
+        )
+        thread = threading.Thread(
+            target=self._narrator_worker,
+            args=(
+                Path(selected),
+                chatterbox_status.snapshot_path,
+                self._selected_cpu_usage_limit(),
+            ),
+            daemon=True,
+        )
+        thread.start()
+
+    def _narrator_worker(
+        self,
+        output_path: Path,
+        model_path: Path,
+        cpu_usage_limit: int,
+    ) -> None:
+        try:
+            if self.media_path is None or self.translated_subtitle_path is None:
+                raise RuntimeError("Brakuje filmu albo polskich napisów.")
+            result = ChatterboxNarrator().render(
+                self.media_path,
+                self.translated_subtitle_path,
+                model_path,
+                output_path=output_path,
+                original_volume=0.28,
+                cpu_usage_limit=cpu_usage_limit,
+                status=lambda message: self.after(0, self._narrator_status, message),
+                progress=lambda done, total: self.after(
+                    0, self._set_narrator_progress, done, total
+                ),
+            )
+            self.after(0, self._narrator_finished, result)
+        except Exception as exc:
+            self.after(0, self._narrator_failed, str(exc))
+
+    def _narrator_status(self, message: str) -> None:
+        lowered = message.lower()
+        if "wczytywanie" in lowered:
+            stage = 2
+        elif "kwestia" in lowered:
+            stage = 3
+        elif "układanie" in lowered:
+            stage = 4
+        elif "miksowanie" in lowered:
+            stage = 5
+        else:
+            stage = 1
+        self._show_stage(stage, message)
+
+    def _set_narrator_progress(self, processed: int, total: int) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate", maximum=max(total, 1))
+        self.progress_var.set(processed)
+        percent = min(max(processed / max(total, 1) * 100, 0.0), 100.0)
+        self.progress_text.set(
+            f"Postęp lektora: {percent:.1f}% • przygotowano {processed} z {total} kwestii"
+        )
+
+    def _narrator_finished(self, result: NarrationResult) -> None:
+        self._finish_attach_operation()
+        finished_message = f"Film z polskim lektorem gotowy: {result.output_path.name}"
+        self._show_stage(6, finished_message, determinate=True)
+        self._finish_activity(finished_message)
+        messagebox.showinfo(
+            "Film z lektorem gotowy",
+            "Utworzono jeden polski głos Chatterbox i zmiksowano go ze ściszonym "
+            f"oryginałem ({result.original_volume:.0%}).\n\n{result.output_path}",
+            parent=self,
+        )
+
+    def _narrator_failed(self, message: str) -> None:
+        self._finish_attach_operation()
+        self._fail_activity("Nie udało się utworzyć polskiego lektora")
+        messagebox.showerror("Tworzenie lektora nie powiodło się", message, parent=self)
 
     def _attach_subtitles(self) -> None:
         if (
@@ -2834,6 +3041,7 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
         self._begin_activity(
             [
                 "Sprawdzanie plików",
@@ -2929,6 +3137,7 @@ class PolySubApp(tk.Tk):
         self.start_button.configure(state="disabled")
         self.attach_button.configure(state="disabled")
         self.burn_button.configure(state="disabled")
+        self.narrator_button.configure(state="disabled")
         self._begin_activity(
             [
                 "Sprawdzanie plików",

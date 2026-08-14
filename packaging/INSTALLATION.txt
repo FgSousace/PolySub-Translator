@@ -1,11 +1,11 @@
-POLYSUB TRANSLATOR™ 0.5.3 — INSTALACJA NA WINDOWS
+POLYSUB TRANSLATOR™ 0.5.4 — INSTALACJA NA WINDOWS
 ==========================================
 
 Autor: fgSousace
 Dozwolony użytek osobisty i niekomercyjny. Użytek komercyjny wymaga osobnej
 zgody autora. Pełne warunki znajdują się w LICENSE.txt i NOTICE.txt.
 
-1. Uruchom plik PolySub-Translator-Setup-0.5.3.exe.
+1. Uruchom plik PolySub-Translator-Setup-0.5.4.exe.
 2. Wybierz folder, w którym ma zostać zainstalowany program.
 3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
 4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator™.
@@ -23,9 +23,9 @@ W sekcji „Ustawienia” można wybrać interfejs Nowoczesny albo Klasyczny 0.4
 oraz jeden z 10 motywów, w tym OLED Black, jasny Arctic Light i automatyczny
 motyw systemowy. Wygląd jest zapamiętywany dla następnych uruchomień.
 
-Instalator nie zawiera wag modeli tłumaczeniowych. Przycisk „Pobierz / usuń…”
-pokazuje katalog 20 opcjonalnych modeli od najmocniejszych do najlżejszych.
-Przed pobraniem program podaje przybliżony rozmiar, wymagania RAM/VRAM i licencję.
+Instalator nie zawiera wag modeli. Przycisk „Pobierz / usuń…” pokazuje osobne
+zakładki Tłumaczenie, Whisper i Lektor. Przed pobraniem program podaje rozmiar,
+dokładność 1–5, wymagania RAM/VRAM i licencję, a w trakcie pokazuje procent i MB/GB.
 Przerwane pobieranie można wznowić, a niepotrzebny model usunąć z dysku.
 Główna lista modeli pokazuje wyłącznie dodatki, które są już pobrane,
 kompletne i gotowe do pracy.
@@ -34,7 +34,7 @@ program nie zamknie się: oznaczy cache jako niedostępny, pozwoli go usunąć i
 szczegóły w %LOCALAPPDATA%\PolySub Translator\model-cache-diagnostics.log.
 
 Domyślny M2M100 418M zajmuje około 1,9 GB. Najmniejsze wyspecjalizowane modele
-OPUS zajmują około 320 MB, a największy MADLAD-400 10B około 43 GB. Modele NLLB
+OPUS zajmują około 300 MB, a największy oferowany model około 5,5 GB. Modele NLLB
 są przeznaczone do użytku badawczego i niekomercyjnego (CC-BY-NC-4.0).
 
 Program po uruchomieniu sprawdza w tle, czy na GitHubie jest nowsza wersja.
@@ -69,9 +69,11 @@ tekstu, ale nie przesuwa początku nowej wypowiedzi. Poprzedni napis nigdy nie
 jest wydłużany na dialog kolejnej postaci. Profil Własne pozwala ustawić minimum
 0,5–5 sekund oraz tempo 8–30 znaków na sekundę.
 
-Po tłumaczeniu filmu dostępne są dwa osobne przyciski:
+Po tłumaczeniu filmu dostępne są trzy osobne przyciski:
 - „Dodaj przełączaną ścieżkę — szybko” nie przelicza obrazu;
 - „Wypal napisy na obrazie — TV” zapisuje napisy na stałe w każdej klatce.
+- „Utwórz film z polskim lektorem” czyta polskie kwestie jednym głosem
+  Chatterbox i miksuje je z oryginałem ściszonym do 28%.
 
 Wypalanie trwa dłużej, ponieważ wymaga ponownego kodowania. Program próbuje
 najpierw NVIDIA NVENC, Intel Quick Sync albo AMD AMF, a w razie problemu

@@ -65,6 +65,10 @@ def test_transcribes_audio_when_video_has_no_text_subtitles(tmp_path, monkeypatc
             assert path == str(video)
             assert kwargs["task"] == "transcribe"
             assert kwargs["word_timestamps"] is True
+            assert kwargs["beam_size"] == 7
+            assert kwargs["patience"] == 1.2
+            assert kwargs["vad_parameters"]["min_silence_duration_ms"] == 350
+            assert kwargs["condition_on_previous_text"] is True
             return iter([segment]), info
 
     model_calls = []

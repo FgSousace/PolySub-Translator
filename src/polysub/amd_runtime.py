@@ -639,7 +639,11 @@ def _bootstrap_embedded_pip(runtime_dir: Path, status: StatusCallback) -> None:
             archive.extractall(site_packages)
     except (OSError, zipfile.BadZipFile) as exc:
         raise AmdRuntimeError(f"Nie udało się przygotować pip w środowisku AMD: {exc}") from exc
-    if not _embedded_pip_ready(amd_runtime_python()):
+    # This bootstrapper is shared by the AMD and narrator runtimes.  Verify the
+    # interpreter that belongs to the directory we just prepared instead of
+    # accidentally probing the AMD runtime unconditionally.
+    executable = "python.exe" if os.name == "nt" else "python"
+    if not _embedded_pip_ready(runtime_dir / executable):
         raise AmdRuntimeError("Pip z oficjalnego, zweryfikowanego koła nie uruchamia się.")
 
 

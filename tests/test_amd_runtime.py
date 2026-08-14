@@ -228,8 +228,14 @@ def test_embedded_pip_uses_a_pinned_wheel_instead_of_downloaded_script(
             archive.writestr("pip/__init__.py", "__version__ = '25.2'\n")
 
     monkeypatch.setattr(amd_runtime, "_download_file", fake_download)
-    monkeypatch.setattr(amd_runtime, "_embedded_pip_ready", lambda _path: True)
-    monkeypatch.setattr(amd_runtime, "amd_runtime_python", lambda: runtime_dir / "python.exe")
+    checked_python_paths: list[Path] = []
+
+    def fake_pip_ready(path: Path) -> bool:
+        checked_python_paths.append(path)
+        return True
+
+    monkeypatch.setattr(amd_runtime, "_embedded_pip_ready", fake_pip_ready)
+    monkeypatch.setattr(amd_runtime.os, "name", "nt")
 
     amd_runtime._bootstrap_embedded_pip(runtime_dir, lambda _message: None)
 
@@ -241,6 +247,7 @@ def test_embedded_pip_uses_a_pinned_wheel_instead_of_downloaded_script(
         )
     ]
     assert (site_packages / "pip" / "__init__.py").is_file()
+    assert checked_python_paths == [runtime_dir / "python.exe"]
     assert "get-pip.py" not in amd_runtime.PIP_WHEEL_URL
 
 

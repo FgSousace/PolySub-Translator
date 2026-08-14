@@ -38,7 +38,9 @@ def main() -> None:
     if "--self-test-model-catalog" in sys.argv:
         import huggingface_hub
 
+        from polysub.narrator_models import CHATTERBOX_MULTILINGUAL_V3
         from polysub.translation_models import DEFAULT_MODEL_ID, MODEL_CATALOG, get_model_spec
+        from polysub.whisper_models import WHISPER_MODEL_CATALOG
 
         if len(MODEL_CATALOG) != 20:
             raise RuntimeError(f"Katalog powinien zawierać 20 modeli, ma {len(MODEL_CATALOG)}.")
@@ -48,7 +50,45 @@ def main() -> None:
             raise RuntimeError("Katalog zawiera powielone identyfikatory modeli.")
         if get_model_spec(DEFAULT_MODEL_ID).repo_id != "facebook/m2m100_418M":
             raise RuntimeError("Domyślny model nie zachowuje zgodności z M2M100 418M.")
+        if any(model.download_gb > 5.5 for model in MODEL_CATALOG):
+            raise RuntimeError("Katalog nadal zawiera model większy niż 5,5 GB.")
+        if any(not 1 <= model.accuracy_score <= 5 for model in MODEL_CATALOG):
+            raise RuntimeError("Model tłumaczeniowy nie ma oceny dokładności 1–5.")
+        if len(WHISPER_MODEL_CATALOG) != 6:
+            raise RuntimeError("Katalog Whisper powinien zawierać sześć wariantów.")
+        if any("tokenizer.json" not in model.required_files for model in WHISPER_MODEL_CATALOG):
+            raise RuntimeError("Model Whisper nie wymaga kompletnego lokalnego tokenizera.")
+        if len(CHATTERBOX_MULTILINGUAL_V3.required_files) != 6:
+            raise RuntimeError("Katalog Chatterbox nie ogranicza pobierania do plików V3.")
         _ = huggingface_hub
+        return
+
+    if "--self-test-narrator" in sys.argv:
+        import wave
+
+        from polysub.narrator import build_narration_track
+        from polysub.narrator_runtime import narrator_worker_script
+        from polysub.subtitles import SRTCue
+
+        worker = narrator_worker_script()
+        if not worker.is_file():
+            raise RuntimeError(f"W pakiecie brakuje workera lektora: {worker}")
+        compile(worker.read_text(encoding="utf-8"), str(worker), "exec")
+        with TemporaryDirectory(prefix="polysub-narrator-test-") as temporary_name:
+            temporary = Path(temporary_name)
+            clip = temporary / "clip.wav"
+            with wave.open(str(clip), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(24000)
+                output.writeframes(b"\x01\x00" * 2400)
+            track = temporary / "track.wav"
+            rate = build_narration_track(
+                ((SRTCue("1", "00:00:01,000 --> 00:00:02,000", "Test"), clip),),
+                track,
+            )
+            if rate != 24000 or not track.is_file() or track.stat().st_size == 0:
+                raise RuntimeError("Test synchronizacji lektora nie utworzył ścieżki WAV.")
         return
 
     if "--self-test-branding" in sys.argv:
@@ -382,6 +422,8 @@ def main() -> None:
                     app.review_mode_checkbox,
                     app.amd_runtime_status_label,
                     app.burn_button,
+                    app.narrator_button,
+                    app.speech_model_combo,
                     app.about_button,
                     app.appearance_interface_combo,
                     app.appearance_theme_combo,

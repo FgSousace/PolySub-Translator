@@ -57,7 +57,8 @@ class VideoSubtitleImporter:
     def __init__(
         self,
         *,
-        model_size: str = "medium",
+        model_size: str | Path | None = "medium",
+        model_name: str | None = None,
         ffmpeg_executable: str | None = None,
         model_factory: ModelFactory | None = None,
         device: str | None = None,
@@ -66,6 +67,11 @@ class VideoSubtitleImporter:
         cpu_usage_limit: int = DEFAULT_CPU_USAGE,
     ) -> None:
         self.model_size = model_size
+        self.model_name = model_name or (
+            f"Whisper {model_size}"
+            if isinstance(model_size, str)
+            else str(model_size or "niepobrany")
+        )
         self.ffmpeg_executable = ffmpeg_executable
         self.model_factory = model_factory
         self.device = device
@@ -95,9 +101,7 @@ class VideoSubtitleImporter:
             document, subtitle_path = embedded
             return VideoImportResult(document, subtitle_path, "embedded")
 
-        status(
-            f"Brak tekstowych napisów — rozpoznawanie mowy przez Whisper {self.model_size}..."
-        )
+        status(f"Brak tekstowych napisów — rozpoznawanie mowy przez {self.model_name}...")
         return self._transcribe_audio(video, status=status, progress=progress)
 
     def _extract_embedded_subtitles(
@@ -166,6 +170,11 @@ class VideoSubtitleImporter:
         status: StatusCallback,
         progress: MediaProgressCallback,
     ) -> VideoImportResult:
+        if self.model_size is None:
+            raise VideoImportError(
+                "Film nie ma tekstowych napisów, a żaden model Whisper nie jest pobrany. "
+                "Otwórz menedżer modeli, wybierz zakładkę Whisper i pobierz model."
+            )
         model_factory = self.model_factory
         if model_factory is None:
             status("Ładowanie modułu rozpoznawania mowy Whisper...")
@@ -241,10 +250,7 @@ class VideoSubtitleImporter:
         compute_type = os.getenv(
             "POLYSUB_WHISPER_COMPUTE_TYPE", "int8" if device == "cpu" else "float16"
         )
-        status(
-            f"Pobieranie lub ładowanie modelu Whisper {self.model_size} "
-            f"na urządzenie {device.upper()}..."
-        )
+        status(f"Ładowanie pobranego modelu {self.model_name} na urządzenie {device.upper()}...")
         model_kwargs: dict[str, Any] = {
             "device": device,
             "compute_type": compute_type,
@@ -265,9 +271,19 @@ class VideoSubtitleImporter:
         segments, info = model.transcribe(
             str(video_path),
             task="transcribe",
-            beam_size=5,
+            beam_size=7,
+            patience=1.2,
             vad_filter=True,
+            vad_parameters={
+                "min_silence_duration_ms": 350,
+                "speech_pad_ms": 250,
+            },
             word_timestamps=True,
+            condition_on_previous_text=True,
+            temperature=0.0,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+            no_speech_threshold=0.6,
         )
         status("Rozpoznawanie mowy i tworzenie kwestii napisów...")
         duration = float(getattr(info, "duration", 0.0) or 0.0)

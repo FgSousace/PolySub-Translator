@@ -108,6 +108,10 @@ jobs:
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-model-catalog"
 
+      - name: Test EXE — polski lektor
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-narrator"
+
       - name: Test EXE — uszkodzony cache modeli
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-model-cache"
@@ -158,6 +162,7 @@ jobs:
             "--self-test-nvidia-runtime",
             "--self-test-branding",
             "--self-test-amd-runtime",
+            "--self-test-narrator",
             "--self-test-model-cache",
             "--self-test-gui"
           )) {

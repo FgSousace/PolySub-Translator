@@ -23,7 +23,12 @@ components:
 - **AMD ROCm runtime libraries** — optionally downloaded from AMD into an isolated environment;
   AMD ROCm licenses — https://rocm.docs.amd.com/en/latest/about/license.html
 - **CPython embedded distribution** — automatically downloaded from python.org only for the
-  isolated AMD worker; Python Software Foundation License — https://docs.python.org/3/license.html
+  isolated AMD and Chatterbox workers; Python Software Foundation License —
+  https://docs.python.org/3/license.html
+- **Chatterbox TTS** — optionally installed in an isolated runtime; MIT License —
+  https://github.com/resemble-ai/chatterbox
+- **Resemble Perth neural watermarking** — installed with the optional narrator runtime;
+  MIT License — https://github.com/resemble-ai/perth
 - **libass** (used by FFmpeg for permanent subtitle rendering when present in the bundled build)
   — ISC License — https://github.com/libass/libass
 
@@ -31,7 +36,6 @@ Downloaded speech-recognition and translation model weights remain subject to th
 on their respective Hugging Face model pages. PolySub does not bundle those model weights in the
 installer. The translation catalog currently links to these separately licensed model families:
 
-- **Google MADLAD-400 MT** — Apache License 2.0 — https://huggingface.co/google/madlad400-3b-mt
 - **Meta M2M100** — MIT License — https://huggingface.co/facebook/m2m100_418M
 - **Meta NLLB-200** — CC-BY-NC-4.0; research/noncommercial use —
   https://huggingface.co/facebook/nllb-200-distilled-600M
@@ -39,3 +43,7 @@ installer. The translation catalog currently links to these separately licensed 
   https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt
 - **Helsinki-NLP OPUS-MT models** — Apache License 2.0 —
   https://huggingface.co/Helsinki-NLP/opus-mt-en-zlw
+- **SYSTRAN faster-whisper model conversions** — MIT License —
+  https://huggingface.co/collections/Systran/faster-whisper
+- **Chatterbox Multilingual V3 weights** — MIT License —
+  https://huggingface.co/ResembleAI/chatterbox
