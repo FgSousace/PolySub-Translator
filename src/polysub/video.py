@@ -258,9 +258,20 @@ class VideoSubtitleImporter:
             "cpu_threads": self.cpu_allocation.threads,
             "num_workers": 1,
         }
+        model_source = self.model_size
+        if isinstance(model_source, Path):
+            if not model_source.is_dir():
+                raise VideoImportError(
+                    "Pobrany model Whisper nie jest już dostępny w lokalnej pamięci. "
+                    "Usuń go w menedżerze modeli i pobierz ponownie."
+                )
+            # faster-whisper accepts PathLike in its Python checks, but CTranslate2's
+            # native Whisper constructor requires a real str on Windows.
+            model_source = str(model_source)
+            model_kwargs["local_files_only"] = True
         if device != "cpu":
             model_kwargs["device_index"] = device_index
-        model = model_factory(self.model_size, **model_kwargs)
+        model = model_factory(model_source, **model_kwargs)
         status(
             "Whisper może użyć "
             f"{self.cpu_allocation.threads} z "

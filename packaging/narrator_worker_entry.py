@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 import traceback
 import wave
 from pathlib import Path
+
+V3_T3_FILENAME = "t3_mtl23ls_v3.safetensors"
 
 
 def _reply(payload: dict[str, object]) -> None:
@@ -43,6 +46,77 @@ def _use_local_chatterbox_assets(model_dir: Path, tokenizer_module=None) -> None
     tokenizer_module.hf_hub_download = local_asset
 
 
+def _load_chatterbox_multilingual_v3(model_dir: Path, device: str, mtl_module=None):
+    """Load V3 with both the released 0.1.7 wheel and the current upstream API."""
+
+    model_dir = Path(model_dir)
+    checkpoint = model_dir / V3_T3_FILENAME
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"Missing local Chatterbox V3 checkpoint: {checkpoint}")
+
+    if mtl_module is None:
+        import chatterbox.mtl_tts as mtl_module
+
+    model_class = mtl_module.ChatterboxMultilingualTTS
+    parameters = inspect.signature(model_class.from_local).parameters
+    if "t3_model" in parameters:
+        return model_class.from_local(model_dir, device=device, t3_model="v3")
+
+    # The published chatterbox-tts 0.1.7 wheel predates V3 support and hardcodes
+    # t3_mtl23ls_v2.safetensors.  Mirror the upstream from_local implementation
+    # while selecting the already downloaded V3 checkpoint.  This avoids copying
+    # the multi-gigabyte weights or mutating Hugging Face's snapshot directory.
+    torch_module = mtl_module.torch
+    map_location = torch_module.device("cpu") if device in {"cpu", "mps"} else None
+
+    voice_encoder = mtl_module.VoiceEncoder()
+    voice_encoder.load_state_dict(
+        torch_module.load(
+            model_dir / "ve.pt",
+            map_location=map_location,
+            weights_only=True,
+        )
+    )
+    voice_encoder.to(device).eval()
+
+    t3 = mtl_module.T3(mtl_module.T3Config.multilingual())
+    t3_state = mtl_module.load_safetensors(checkpoint)
+    if "model" in t3_state:
+        t3_state = t3_state["model"][0]
+    t3.load_state_dict(t3_state)
+    t3.to(device).eval()
+
+    s3gen = mtl_module.S3Gen()
+    s3gen.load_state_dict(
+        torch_module.load(
+            model_dir / "s3gen.pt",
+            map_location=map_location,
+            weights_only=True,
+        )
+    )
+    s3gen.to(device).eval()
+
+    tokenizer = mtl_module.MTLTokenizer(
+        str(model_dir / "grapheme_mtl_merged_expanded_v1.json")
+    )
+    conditionals = None
+    builtin_voice = model_dir / "conds.pt"
+    if builtin_voice.exists():
+        conditionals = mtl_module.Conditionals.load(
+            builtin_voice,
+            map_location=map_location,
+        ).to(device)
+
+    return model_class(
+        t3,
+        s3gen,
+        voice_encoder,
+        tokenizer,
+        device,
+        conds=conditionals,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", type=Path, required=True)
@@ -51,16 +125,10 @@ def main() -> int:
     args = parser.parse_args()
     try:
         import torch
-        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-
         torch.set_num_threads(max(args.threads, 1))
         torch.set_num_interop_threads(1)
         _use_local_chatterbox_assets(args.model_dir)
-        model = ChatterboxMultilingualTTS.from_local(
-            args.model_dir,
-            device="cpu",
-            t3_model="v3",
-        )
+        model = _load_chatterbox_multilingual_v3(args.model_dir, device="cpu")
         sample_rate = int(model.sr)
         _reply({"ready": True, "sample_rate": sample_rate})
         for line in sys.stdin:
