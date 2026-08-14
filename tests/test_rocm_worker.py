@@ -4,6 +4,7 @@ from pathlib import Path
 
 import polysub.engines.rocm_worker as rocm_worker
 from polysub.engines.rocm_worker import RocmWorkerEngine
+from polysub.local_ai_runtime import MANAGED_AI_RUNTIME_ENV
 from polysub.translation_models import DEFAULT_MODEL_ID, get_model_spec
 
 
@@ -61,6 +62,7 @@ def test_worker_masks_ryzen_igpu_and_uses_selected_radeon_as_cuda_zero(
     assert isinstance(environment, dict)
     assert environment["HIP_VISIBLE_DEVICES"] == "1"
     assert "CUDA_VISIBLE_DEVICES" not in environment
+    assert environment[MANAGED_AI_RUNTIME_ENV] == "amd-rocm"
     init_request = json.loads(process.stdin.getvalue().splitlines()[0])
     assert init_request["device_index"] == 0
     engine.close()

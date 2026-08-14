@@ -6,7 +6,7 @@
 
 # PolySub Translator™
 
-**Autor: fgSousace • Copyright © 2026 fgSousace • użytek niekomercyjny**
+**Autor: FgSousace • Copyright © 2026 FgSousace • użytek niekomercyjny**
 
 **Context-aware multilingual subtitle translator with automatic language detection and
 interactive review.**
@@ -16,7 +16,7 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.5.5` — naprawione lokalne uruchamianie modeli Whisper i lektora
+> Status: `v0.5.6` — naprawione zależności lokalnych modeli i automatyczna naprawa AMD
 > Chatterbox V3 na Windows; pobrane wcześniej wagi nie wymagają ponownego pobierania.
 
 ## Najważniejsze funkcje
@@ -156,7 +156,7 @@ wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o ty
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-Instalator v0.5.5 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+Instalator v0.5.6 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
 RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
 PyTorch. PolySub po wykryciu zgodnej karty sam dobiera jej architekturę, w tle pobiera własne
 odizolowane środowisko Python oraz oficjalny PyTorch ROCm 7.14, a następnie wykonuje prawdziwe
@@ -183,7 +183,7 @@ równolegle rozłożyć, ale program nie wykonuje sztucznego obciążenia bez u�
 
 Od wersji 0.4.9 oryginalny kod projektu jest udostępniany na warunkach
 **PolyForm Noncommercial License 1.0.0**. Dozwolony jest użytek osobisty i inny niekomercyjny;
-użytek zarobkowy lub inny komercyjny wymaga osobnej pisemnej zgody fgSousace. Wcześniejsze
+użytek zarobkowy lub inny komercyjny wymaga osobnej pisemnej zgody FgSousace. Wcześniejsze
 wydania zachowują warunki, na których zostały opublikowane. Wagi modeli są pobierane osobno i
 podlegają licencji widocznej w menedżerze oraz na oficjalnej karcie danego modelu.
 
@@ -256,9 +256,9 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 1. Otwórz [najnowszą wersję PolySub Translator](https://github.com/FgSousace/PolySub-Translator/releases/latest).
 2. W sekcji **Assets** wybierz jeden z dwóch wariantów:
-   - `PolySub-Translator-Setup-0.5.5.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
-   - `PolySub-Translator-Installer-0.5.5.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
-3. Uruchom `PolySub-Translator-Setup-0.5.5.exe` i wybierz katalog instalacji.
+   - `PolySub-Translator-Setup-0.5.6.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
+   - `PolySub-Translator-Installer-0.5.6.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
+3. Uruchom `PolySub-Translator-Setup-0.5.6.exe` i wybierz katalog instalacji.
 4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
 5. Po instalacji kreator pokaże krótką instrukcję, opcję uruchomienia programu oraz opcjonalne
    pole **Wybierz i pobierz modele AI**.
@@ -287,10 +287,13 @@ Plik programu `.exe` zawiera silnik potrzebny do uruchomienia aplikacji, ale nie
 wag modeli. Otwórz **Pobierz / usuń…**, wybierz zakładkę i model. Domyślny
 M2M100 418M pobiera około 1,9 GB, a najmniejsze modele OPUS około 300 MB. Wybrany model
 zostaje w pamięci podręcznej Windows, więc przy następnym tłumaczeniu nie jest pobierany ponownie.
+W wersji instalowanej nie uruchamiaj `pip install -e ".[local]"`: zależności są częścią EXE,
+a prywatne biblioteki Radeona PolySub sprawdza i naprawia automatycznie. Polecenie `pip` poniżej
+dotyczy wyłącznie uruchamiania programu z kodu źródłowego.
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.5 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.6 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 
@@ -466,9 +469,9 @@ src/polysub/
 
 ## Licencja i autor
 
-PolySub Translator™ został stworzony przez **fgSousace**.
+PolySub Translator™ został stworzony przez **FgSousace**.
 
-Required Notice: PolySub Translator™ — Copyright © 2026 fgSousace. Licensed for noncommercial use only.
+Required Notice: PolySub Translator™ — Copyright © 2026 FgSousace. Licensed for noncommercial use only.
 
 Kod od v0.4.9: [PolyForm Noncommercial License 1.0.0](LICENSE). Informacje o wymaganym oznaczeniu
 znajdują się w [NOTICE.txt](NOTICE.txt), a licencje bibliotek i modeli w

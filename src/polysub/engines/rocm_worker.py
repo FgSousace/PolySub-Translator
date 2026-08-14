@@ -13,6 +13,7 @@ from ..amd_runtime import (
     amd_worker_pythonpath,
     amd_worker_script,
 )
+from ..local_ai_runtime import MANAGED_AI_RUNTIME_ENV
 from ..translation_models import TranslationModelSpec
 from .base import TranslationEngine, TranslationEngineError
 
@@ -43,6 +44,7 @@ class RocmWorkerEngine(TranslationEngine):
             )
         environment = amd_worker_environment(device_index)
         environment["PYTHONPATH"] = str(pythonpath)
+        environment[MANAGED_AI_RUNTIME_ENV] = "amd-rocm"
         self._status(
             f"AMD ROCm: izolowanie urządzenia HIP {max(int(device_index), 0)} "
             "i uruchamianie go jako cuda:0…"

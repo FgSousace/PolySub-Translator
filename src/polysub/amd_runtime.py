@@ -6,7 +6,7 @@ embedded Python runtime in the user's profile and starts AMD translation in a
 separate worker process. The setup is automatic after a supported Radeon is
 detected and never modifies the system Python installation.
 
-Required Notice: PolySub Translator™ — Copyright © 2026 fgSousace.
+Required Notice: PolySub Translator™ — Copyright © 2026 FgSousace.
 Licensed for noncommercial use only under PolyForm Noncommercial 1.0.0.
 """
 
@@ -69,6 +69,39 @@ print(json.dumps({
     "hip": str(torch.version.hip or ""),
     "count": count,
 }))
+"""
+
+# A working HIP matrix test is not sufficient for translation: a partially
+# installed runtime may contain torch while transformers or sentencepiece is
+# missing. Probe the exact imports used by both local engine implementations so
+# an interrupted setup is repaired before the Radeon is offered in the GUI.
+AMD_MODEL_STACK_PROBE_CODE = """
+import json
+
+try:
+    import huggingface_hub
+    import safetensors
+    import sentencepiece
+    import tokenizers
+    import torch
+    import transformers
+    from transformers import (
+        AutoModelForSeq2SeqLM,
+        AutoTokenizer,
+        M2M100ForConditionalGeneration,
+        M2M100Tokenizer,
+    )
+    payload = {
+        "ready": True,
+        "torch": str(torch.__version__),
+        "transformers": str(transformers.__version__),
+    }
+except BaseException as exc:
+    payload = {
+        "ready": False,
+        "error": f"{type(exc).__name__}: {exc}",
+    }
+print(json.dumps(payload))
 """
 
 # This code runs once per physical HIP index with HIP_VISIBLE_DEVICES set. The
@@ -282,6 +315,31 @@ def probe_amd_runtime(*, timeout: float = 45.0) -> AmdRuntimeStatus:
             target=target,
             message=(
                 "PyTorch ROCm jest zainstalowany, ale HIP nie wykrył żadnego urządzenia."
+            ),
+        )
+
+    model_stack, model_stack_error = _run_amd_json_command(
+        python_path,
+        AMD_MODEL_STACK_PROBE_CODE,
+        timeout=max(min(timeout, 90.0), 20.0),
+        environment=amd_worker_environment(),
+    )
+    if model_stack is None or not bool(model_stack.get("ready")):
+        detail = (
+            str(model_stack.get("error") or "")
+            if model_stack is not None
+            else model_stack_error
+        ).strip()
+        return AmdRuntimeStatus(
+            installed=True,
+            ready=False,
+            python_path=python_path,
+            hip_version=hip or None,
+            target=target,
+            message=(
+                "PyTorch ROCm i HIP działają, ale środowisko tłumaczenia AMD jest "
+                "niekompletne. PolySub automatycznie doinstaluje brakujące biblioteki."
+                + (f" Szczegóły: {detail[-900:]}" if detail else "")
             ),
         )
 

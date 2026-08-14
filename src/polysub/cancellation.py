@@ -1,6 +1,6 @@
 """Cooperative cancellation shared by the GUI and translation service.
 
-Required Notice: PolySub Translator™ — Copyright © 2026 fgSousace.
+Required Notice: PolySub Translator™ — Copyright © 2026 FgSousace.
 Licensed for noncommercial use only under PolyForm Noncommercial 1.0.0.
 """
 

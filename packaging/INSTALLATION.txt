@@ -1,11 +1,11 @@
-POLYSUB TRANSLATOR™ 0.5.5 — INSTALACJA NA WINDOWS
+POLYSUB TRANSLATOR™ 0.5.6 — INSTALACJA NA WINDOWS
 ==========================================
 
-Autor: fgSousace
+Autor: FgSousace
 Dozwolony użytek osobisty i niekomercyjny. Użytek komercyjny wymaga osobnej
 zgody autora. Pełne warunki znajdują się w LICENSE.txt i NOTICE.txt.
 
-1. Uruchom plik PolySub-Translator-Setup-0.5.5.exe.
+1. Uruchom plik PolySub-Translator-Setup-0.5.6.exe.
 2. Wybierz folder, w którym ma zostać zainstalowany program.
 3. Zostaw zaznaczoną opcję utworzenia skrótu na pulpicie.
 4. Kliknij Instaluj, a po zakończeniu uruchom PolySub Translator™.
@@ -14,6 +14,8 @@ zgody autora. Pełne warunki znajdują się w LICENSE.txt i NOTICE.txt.
 
 Program nie wymaga instalowania Pythona, Gita ani FFmpeg.
 Instalacja odbywa się tylko dla bieżącego użytkownika i nie wymaga konta administratora.
+Pakietów lokalnego AI nie należy doinstalowywać zwykłym `pip` z PowerShella —
+instalator zawiera je w EXE, a prywatne środowisko AMD program naprawia automatycznie.
 
 PIERWSZE URUCHOMIENIE
 ---------------------

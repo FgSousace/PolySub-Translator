@@ -1,13 +1,13 @@
-Required Notice: PolySub Translator™ — Copyright © 2026 fgSousace. Licensed for noncommercial use only.
+Required Notice: PolySub Translator™ — Copyright © 2026 FgSousace. Licensed for noncommercial use only.
 
-PolySub Translator™ was created by fgSousace.
+PolySub Translator™ was created by FgSousace.
 
 Starting with version 0.4.9, the PolySub Translator source code and original
 application assets are licensed under the PolyForm Noncommercial License 1.0.0:
 https://polyformproject.org/licenses/noncommercial/1.0.0
 
 Personal and other noncommercial uses are permitted under that license.
-Commercial or for-profit use requires separate written permission from fgSousace.
+Commercial or for-profit use requires separate written permission from FgSousace.
 
 Third-party components and separately downloaded AI models keep their own
 licenses. See THIRD_PARTY_NOTICES.md and each model card.

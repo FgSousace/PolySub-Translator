@@ -25,7 +25,7 @@ def test_version_is_consistent_in_python_project_and_installer() -> None:
     numeric_version = ", ".join(__version__.split(".")) + ", 0"
 
     assert project["project"]["version"] == __version__
-    assert __version__ == "0.5.5"
+    assert __version__ == "0.5.6"
     assert installer_version is not None
     assert installer_version.group(1) == __version__
     assert "OutputBaseFilename=PolySub-Translator-Setup-{#MyAppVersion}" in installer
@@ -41,6 +41,7 @@ def test_windows_release_assets_include_the_application_version() -> None:
 
     assert "PolySub-Translator-Setup-$env:POLYSUB_VERSION.exe" in workflow
     assert "PolySub-Translator-Installer-$env:POLYSUB_VERSION.zip" in workflow
+    assert "--self-test-local-ai" in workflow
 
 
 def test_windows_package_avoids_upx_and_scans_release_with_defender() -> None:
@@ -70,6 +71,7 @@ def test_historical_release_notes_are_separate_and_version_specific() -> None:
         "v0.5.2",
         "v0.5.3",
         "v0.5.4",
+        "v0.5.5",
     }
 
     assert {path.stem for path in notes} == expected
@@ -97,6 +99,34 @@ def test_historical_release_notes_are_separate_and_version_specific() -> None:
     assert current_headings == [__version__]
     assert "Wcześniej dodane" not in current_body
     assert "Wcześniej poprawione" not in current_body
+
+
+def test_author_name_uses_a_capital_f_in_every_user_facing_file() -> None:
+    author = "FgSousace"
+    lowercase_variant = author[0].lower() + author[1:]
+    text_suffixes = {
+        ".iss",
+        ".json",
+        ".md",
+        ".ps1",
+        ".py",
+        ".spec",
+        ".toml",
+        ".txt",
+        ".yaml",
+        ".yml",
+    }
+    ignored_directories = {".git", ".pytest_cache", ".ruff_cache", ".venv"}
+    paths = (
+        path
+        for path in PROJECT_ROOT.rglob("*")
+        if path.is_file()
+        and path.suffix.casefold() in text_suffixes
+        and not ignored_directories.intersection(path.parts)
+    )
+
+    for path in paths:
+        assert lowercase_variant not in path.read_text(encoding="utf-8"), path
 
 
 def test_cli_accepts_every_catalog_model() -> None:

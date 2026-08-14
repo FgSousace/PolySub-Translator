@@ -5,6 +5,7 @@ import polysub.amd_runtime as amd_runtime
 from polysub.amd_runtime import (
     AMD_GPU_INVENTORY_CODE,
     AMD_GPU_PROBE_CODE,
+    AMD_MODEL_STACK_PROBE_CODE,
     AMD_RUNTIME_TARGET_PREFIX,
     ROCM_VERSION,
     AmdRuntimeStatus,
@@ -100,6 +101,7 @@ def test_current_radeon_families_select_the_exact_official_target() -> None:
         assert infer_amd_gfx_target(name) == target
     compile(AMD_GPU_INVENTORY_CODE, "<amd-gpu-inventory>", "exec")
     compile(AMD_GPU_PROBE_CODE, "<amd-gpu-probe>", "exec")
+    compile(AMD_MODEL_STACK_PROBE_CODE, "<amd-model-stack-probe>", "exec")
 
 
 def test_rx_9070_xt_behind_ryzen_igpu_keeps_its_real_hip_index() -> None:
@@ -155,6 +157,8 @@ def test_probe_skips_ryzen_igpu_and_accepts_masked_rx_9070_xt(
         masks.append(environment.get("HIP_VISIBLE_DEVICES"))
         if code == AMD_GPU_INVENTORY_CODE:
             return {"hip": "7.14.0", "count": 2}, ""
+        if code == AMD_MODEL_STACK_PROBE_CODE:
+            return {"ready": True}, ""
         if environment.get("HIP_VISIBLE_DEVICES") == "0":
             return None, "iGPU nie zawiera kernela gfx1036"
         return {
@@ -178,7 +182,44 @@ def test_probe_skips_ryzen_igpu_and_accepts_masked_rx_9070_xt(
     assert result.ready
     assert result.devices == ("AMD Radeon RX 9070 XT",)
     assert result.runtime_indices == (1,)
-    assert masks == [None, "0", "1"]
+    assert masks == [None, None, "0", "1"]
+
+
+def test_probe_rejects_runtime_with_missing_translation_packages(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    python_path = tmp_path / "python.exe"
+    python_path.touch()
+    calls: list[str] = []
+
+    def fake_run(_python, code, *, timeout, environment):
+        del timeout, environment
+        calls.append(code)
+        if code == AMD_GPU_INVENTORY_CODE:
+            return {"hip": "7.14.0", "count": 1}, ""
+        if code == AMD_MODEL_STACK_PROBE_CODE:
+            return {
+                "ready": False,
+                "error": "ModuleNotFoundError: No module named 'transformers'",
+            }, ""
+        raise AssertionError("Test GPU nie powinien ruszyć bez bibliotek modeli.")
+
+    monkeypatch.setattr(amd_runtime, "amd_runtime_python", lambda: python_path)
+    monkeypatch.setattr(
+        amd_runtime,
+        "_load_runtime_manifest",
+        lambda: {"target": "gfx1201"},
+    )
+    monkeypatch.setattr(amd_runtime, "_run_amd_json_command", fake_run)
+
+    result = amd_runtime.probe_amd_runtime(timeout=45.0)
+
+    assert result.installed
+    assert not result.ready
+    assert "automatycznie doinstaluje" in result.message
+    assert "transformers" in result.message
+    assert calls == [AMD_GPU_INVENTORY_CODE, AMD_MODEL_STACK_PROBE_CODE]
 
 
 def test_rx_9070_xt_plan_uses_small_gfx1201_pytorch_extra() -> None:

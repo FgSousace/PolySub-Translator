@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from ..local_ai_runtime import local_ai_dependency_error
 from ..performance import (
     DEFAULT_CPU_USAGE,
     configure_thread_environment,
@@ -41,10 +42,13 @@ class TransformersTranslationEngine(TranslationEngine):
         status("Ładowanie bibliotek lokalnego AI...")
         try:
             import torch
+        except (ImportError, OSError) as exc:
+            raise TranslationEngineError(local_ai_dependency_error("PyTorch", exc)) from exc
+        try:
             from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-        except ImportError as exc:
+        except (ImportError, OSError) as exc:
             raise TranslationEngineError(
-                'Brakuje pakietów lokalnego AI. Uruchom: pip install -e ".[local]"'
+                local_ai_dependency_error("bibliotek Transformers", exc)
             ) from exc
 
         self._torch = torch
