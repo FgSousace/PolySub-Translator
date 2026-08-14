@@ -92,6 +92,10 @@ jobs:
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-performance"
 
+      - name: Test EXE — lokalne modele AI
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-local-ai"
+
       - name: Test EXE — NVIDIA CUDA
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-nvidia-runtime"
@@ -159,6 +163,7 @@ jobs:
           foreach ($argument in @(
             "--version",
             "--self-test-video",
+            "--self-test-local-ai",
             "--self-test-nvidia-runtime",
             "--self-test-branding",
             "--self-test-amd-runtime",

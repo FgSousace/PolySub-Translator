@@ -1,8 +1,8 @@
 # UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(0, 5, 5, 0),
-    prodvers=(0, 5, 5, 0),
+    filevers=(0, 5, 6, 0),
+    prodvers=(0, 5, 6, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -15,14 +15,14 @@ VSVersionInfo(
       StringTable(
         u'040904B0',
         [
-          StringStruct(u'CompanyName', u'fgSousace'),
+          StringStruct(u'CompanyName', u'FgSousace'),
           StringStruct(u'FileDescription', u'PolySub Translator™'),
-          StringStruct(u'FileVersion', u'0.5.5'),
+          StringStruct(u'FileVersion', u'0.5.6'),
           StringStruct(u'InternalName', u'PolySubTranslator'),
-          StringStruct(u'LegalCopyright', u'Copyright © 2026 fgSousace'),
+          StringStruct(u'LegalCopyright', u'Copyright © 2026 FgSousace'),
           StringStruct(u'OriginalFilename', u'PolySubTranslator.exe'),
           StringStruct(u'ProductName', u'PolySub Translator™'),
-          StringStruct(u'ProductVersion', u'0.5.5'),
+          StringStruct(u'ProductVersion', u'0.5.6'),
           StringStruct(u'Comments', u'Noncommercial use only — PolyForm Noncommercial 1.0.0'),
         ],
       )

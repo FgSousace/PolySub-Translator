@@ -1,13 +1,13 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.5.5 • autor: fgSousace • użytek niekomercyjny**
+**Wersja 0.5.6 • autor: FgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
 
 ## 1. Instalacja
 
-1. Pobierz `PolySub-Translator-Setup-0.5.5.exe` z oficjalnej strony GitHub Releases.
+1. Pobierz `PolySub-Translator-Setup-0.5.6.exe` z oficjalnej strony GitHub Releases.
 2. Uruchom instalator, wybierz folder i kliknij **Instaluj**.
 3. Przy pierwszym uruchomieniu otwórz **Pobierz / usuń…** i pobierz co najmniej
    jeden model lokalny albo wybierz silnik DeepL i wpisz swój klucz API.
@@ -134,6 +134,9 @@ neuronowy znak wodny.
 
 - **Nie widzę modelu w głównym oknie:** pobieranie nie jest ukończone; otwórz
   menedżer i wybierz **Wznów/Pobierz**.
+- **„Brakuje pakietów lokalnego AI” po rozpoczęciu tłumaczenia:** w instalacji EXE
+  nie używaj systemowego `pip`. Zainstaluj najnowsze wydanie ponownie; dla Radeona
+  pozostaw aplikację uruchomioną, aby prywatne środowisko zostało naprawione automatycznie.
 - **Film nie ma napisów, a Whisper nie startuje:** pobierz wybrany wariant w zakładce
   **Whisper**. Aplikacja nie uruchamia już ukrytego pobierania przy otwieraniu filmu.
 - **Przycisk lektora jest nieaktywny:** gotowe napisy muszą być po polsku, a wejściem
@@ -153,11 +156,11 @@ neuronowy znak wodny.
 
 ## 10. Autor i licencja
 
-PolySub Translator™ został stworzony przez **fgSousace**.
+PolySub Translator™ został stworzony przez **FgSousace**.
 
-Required Notice: PolySub Translator™ — Copyright © 2026 fgSousace. Licensed for noncommercial use only.
+Required Notice: PolySub Translator™ — Copyright © 2026 FgSousace. Licensed for noncommercial use only.
 
 Od wersji 0.4.9 oryginalny kod aplikacji jest dostępny na warunkach PolyForm
 Noncommercial License 1.0.0. Dozwolony jest użytek osobisty i inny niekomercyjny.
-Użytek zarobkowy/komercyjny wymaga osobnej pisemnej zgody fgSousace. Biblioteki
+Użytek zarobkowy/komercyjny wymaga osobnej pisemnej zgody FgSousace. Biblioteki
 zewnętrzne i pobierane modele zachowują swoje osobne licencje.

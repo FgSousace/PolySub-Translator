@@ -1,6 +1,6 @@
 #define MyAppName "PolySub Translator™"
-#define MyAppVersion "0.5.5"
-#define MyAppPublisher "fgSousace"
+#define MyAppVersion "0.5.6"
+#define MyAppPublisher "FgSousace"
 #define MyAppURL "https://github.com/FgSousace/PolySub-Translator"
 #define MyAppExeName "PolySubTranslator.exe"
 

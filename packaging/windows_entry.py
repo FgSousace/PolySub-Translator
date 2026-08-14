@@ -94,7 +94,7 @@ def main() -> None:
     if "--self-test-branding" in sys.argv:
         from polysub.branding import AUTHOR, PRODUCT_NAME, REQUIRED_NOTICE
 
-        if PRODUCT_NAME != "PolySub Translator™" or AUTHOR != "fgSousace":
+        if PRODUCT_NAME != "PolySub Translator™" or AUTHOR != "FgSousace":
             raise RuntimeError("Metadane marki PolySub Translator™ są nieprawidłowe.")
         if not REQUIRED_NOTICE.startswith("Required Notice:"):
             raise RuntimeError("Brakuje wymaganego oznaczenia licencyjnego.")
@@ -109,7 +109,7 @@ def main() -> None:
             )
             if candidate is None:
                 raise RuntimeError(f"W pakiecie brakuje pliku {filename}.")
-            if "fgSousace" not in candidate.read_text(encoding="utf-8"):
+            if "FgSousace" not in candidate.read_text(encoding="utf-8"):
                 raise RuntimeError(f"Plik {filename} nie zawiera oznaczenia autora.")
         return
 
@@ -117,6 +117,7 @@ def main() -> None:
         from polysub.amd_runtime import (
             AMD_GPU_INVENTORY_CODE,
             AMD_GPU_PROBE_CODE,
+            AMD_MODEL_STACK_PROBE_CODE,
             EMBEDDED_PYTHON_URL,
             ROCM_INDEX_URL,
             ROCM_VERSION,
@@ -152,6 +153,7 @@ def main() -> None:
             raise RuntimeError("Instalator AMD nie przygotowuje backendu setuptools.build_meta.")
         compile(AMD_GPU_INVENTORY_CODE, "<amd-gpu-inventory>", "exec")
         compile(AMD_GPU_PROBE_CODE, "<amd-gpu-probe>", "exec")
+        compile(AMD_MODEL_STACK_PROBE_CODE, "<amd-model-stack-probe>", "exec")
         masked_environment = amd_worker_environment(1)
         if masked_environment.get("HIP_VISIBLE_DEVICES") != "1":
             raise RuntimeError("Worker AMD nie izoluje RX 9070 XT za pomocą HIP_VISIBLE_DEVICES.")
@@ -369,6 +371,40 @@ def main() -> None:
             raise RuntimeError(
                 "PyTorch nie zastosował pełnej liczby wybranych wątków procesora."
             )
+        return
+
+    if "--self-test-local-ai" in sys.argv:
+        import huggingface_hub
+        import safetensors
+        import sentencepiece
+        import tokenizers
+        import torch
+        import transformers
+        from transformers import (
+            AutoModelForSeq2SeqLM,
+            AutoTokenizer,
+            M2M100ForConditionalGeneration,
+            M2M100Tokenizer,
+        )
+
+        # Force Transformers' lazy loader to resolve the exact classes used by
+        # downloaded PolySub models. No weights or network access are required.
+        required = (
+            AutoModelForSeq2SeqLM,
+            AutoTokenizer,
+            M2M100ForConditionalGeneration,
+            M2M100Tokenizer,
+        )
+        if any(component is None for component in required):
+            raise RuntimeError("Pakiet lokalnego AI nie udostępnia wymaganych klas.")
+        _ = (
+            huggingface_hub,
+            safetensors,
+            sentencepiece,
+            tokenizers,
+            torch,
+            transformers,
+        )
         return
 
     if "--self-test-nvidia-runtime" in sys.argv:

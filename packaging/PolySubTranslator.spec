@@ -26,8 +26,16 @@ hiddenimports = [
     "sentencepiece",
     "torch",
 ]
-for package in ("transformers", "huggingface_hub", "tokenizers", "safetensors"):
-    datas += collect_data_files(package)
+datas += collect_data_files("transformers")
+
+# These packages use compiled extensions and/or runtime discovery. Collecting
+# their complete package payload prevents a build from passing while the local
+# model fails only after the user presses "Rozpocznij tłumaczenie".
+for package in ("huggingface_hub", "tokenizers", "safetensors", "sentencepiece"):
+    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    datas += package_datas
+    binaries += package_binaries
+    hiddenimports += package_hiddenimports
 
 for package in ("av", "ctranslate2", "faster_whisper", "imageio_ffmpeg"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)
@@ -58,8 +66,15 @@ for distribution in (
         pass
 
 hiddenimports += collect_submodules("fasttext")
-for model_package in ("m2m_100", "nllb", "mbart", "marian", "t5"):
-    hiddenimports += collect_submodules(f"transformers.models.{model_package}")
+for transformer_package in (
+    "generation",
+    "models.m2m_100",
+    "models.nllb",
+    "models.mbart",
+    "models.marian",
+    "models.t5",
+):
+    hiddenimports += collect_submodules(f"transformers.{transformer_package}")
 
 a = Analysis(
     [str(PROJECT_ROOT / "packaging" / "windows_entry.py")],
