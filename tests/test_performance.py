@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from polysub.performance import (
     CpuAllocation,
+    accelerator_batch_size,
     configure_thread_environment,
     configure_torch_threads,
     cpu_allocation,
@@ -61,4 +62,25 @@ def test_translation_batch_grows_on_cpu_without_unbounded_memory_use() -> None:
     assert translation_batch_size(CpuAllocation(25, 16, 4), "cpu") == 4
     assert translation_batch_size(CpuAllocation(100, 16, 16), "cpu") == 16
     assert translation_batch_size(CpuAllocation(100, 64, 64), "cpu") == 16
-    assert translation_batch_size(CpuAllocation(100, 16, 16), "cuda:0") == 8
+    assert translation_batch_size(CpuAllocation(100, 16, 16), "cuda:0") == 32
+
+
+def test_accelerator_batch_uses_free_vram_and_model_specific_guardrail() -> None:
+    gib = 1024**3
+    torch = SimpleNamespace(
+        cuda=SimpleNamespace(mem_get_info=lambda: (14 * gib, 16 * gib)),
+    )
+
+    # Lightweight M2M100/OPUS-style cap can use a very wide batch on a 16 GB card.
+    assert accelerator_batch_size(torch, "cuda:0", 16) == 64
+    # Large 1.3B checkpoints keep their conservative catalog cap as a 4x guardrail.
+    assert accelerator_batch_size(torch, "cuda:0", 4) == 16
+
+
+def test_accelerator_batch_stays_bounded_when_vram_is_tight() -> None:
+    gib = 1024**3
+    torch = SimpleNamespace(
+        cuda=SimpleNamespace(mem_get_info=lambda: (3 * gib, 8 * gib)),
+    )
+
+    assert accelerator_batch_size(torch, "cuda:0", 16) == 16

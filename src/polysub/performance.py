@@ -66,4 +66,49 @@ def configure_torch_threads(torch_module: Any, allocation: CpuAllocation) -> Non
 def translation_batch_size(allocation: CpuAllocation, device: str) -> int:
     if device == "cpu":
         return max(1, min(allocation.threads, 16))
-    return 8
+    # Accelerator engines refine this value after the model is loaded and free VRAM
+    # can be queried. Keeping a much larger default than the historical 8 prevents
+    # powerful GPUs from spending most of their time waiting between tiny batches.
+    return 32
+
+
+def accelerator_batch_size(
+    torch_module: Any,
+    device: str,
+    model_batch_cap: int,
+) -> int:
+    """Choose an aggressive but bounded batch from free accelerator memory.
+
+    ``model_batch_cap`` is the conservative catalog value used by older releases.
+    On a GPU we allow up to 4x that value, capped at 64 cues. If the backend exposes
+    ``mem_get_info`` we use the *free* VRAM after loading the model, which naturally
+    accounts for large checkpoints. Engines additionally back off automatically on
+    a real out-of-memory error, so this can aim high without aborting a translation.
+    """
+
+    conservative = max(int(model_batch_cap), 1)
+    if device == "cpu":
+        return conservative
+
+    model_limit = min(conservative * 4, 64)
+    candidate = min(32, model_limit)
+    if not str(device).startswith("cuda"):
+        return max(candidate, 1)
+
+    try:
+        free_bytes, _total_bytes = torch_module.cuda.mem_get_info()
+        free_gib = float(free_bytes) / (1024**3)
+    except Exception:
+        return max(candidate, 1)
+
+    if free_gib >= 12:
+        candidate = 64
+    elif free_gib >= 8:
+        candidate = 48
+    elif free_gib >= 4:
+        candidate = 32
+    elif free_gib >= 2:
+        candidate = 16
+    else:
+        candidate = 8
+    return max(1, min(candidate, model_limit))
