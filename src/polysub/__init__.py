@@ -7,4 +7,4 @@ Licensed for noncommercial use only under PolyForm Noncommercial 1.0.0.
 from .models import TranslationMode
 
 __all__ = ["TranslationMode"]
-__version__ = "0.5.10"
+__version__ = "0.6.0"
