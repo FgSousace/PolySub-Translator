@@ -26,8 +26,9 @@ from .amd_runtime import (
 from .compute_devices import detect_hardware_snapshot
 
 CHATTERBOX_VERSION = "0.1.7"
-AMD_TORCHAUDIO_VERSION = "2.12.0"
-NARRATOR_RUNTIME_SCHEMA = 2
+# AMD's official ROCm 7.14 Windows matrix pairs PyTorch 2.12.0 with torchaudio 2.11.0.
+AMD_TORCHAUDIO_VERSION = "2.11.0"
+NARRATOR_RUNTIME_SCHEMA = 3
 StatusCallback = Callable[[str], None]
 
 
@@ -420,6 +421,7 @@ def _manifest_matches(
     if backend == "rocm":
         return bool(
             payload.get("rocm_version") == ROCM_VERSION
+            and payload.get("torchaudio_version") == AMD_TORCHAUDIO_VERSION
             and int(payload.get("device_index", -1)) == int(device_index or 0)
         )
     return payload.get("device") == "cpu"
@@ -439,6 +441,7 @@ def _runtime_ready(
             "import chatterbox,torch,torchaudio;"
             "assert torch.version.hip;"
             "assert torch.cuda.is_available();"
+            "assert torchaudio.__version__.startswith('2.11.0');"
             "x=torch.ones((16,16),device='cuda:0');"
             "y=(x@x)[0,0].item();"
             "assert abs(float(y)-16.0)<0.01"
