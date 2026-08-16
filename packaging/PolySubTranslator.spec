@@ -24,6 +24,7 @@ hiddenimports = [
     "fasttext",
     "numpy",
     "sentencepiece",
+    "tiktoken",
     "torch",
 ]
 datas += collect_data_files("transformers")
@@ -31,7 +32,13 @@ datas += collect_data_files("transformers")
 # These packages use compiled extensions and/or runtime discovery. Collecting
 # their complete package payload prevents a build from passing while the local
 # model fails only after the user presses "Rozpocznij tłumaczenie".
-for package in ("huggingface_hub", "tokenizers", "safetensors", "sentencepiece"):
+for package in (
+    "huggingface_hub",
+    "tokenizers",
+    "safetensors",
+    "sentencepiece",
+    "tiktoken",
+):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)
     datas += package_datas
     binaries += package_binaries
@@ -51,6 +58,7 @@ for distribution in (
     "safetensors",
     "huggingface-hub",
     "sentencepiece",
+    "tiktoken",
     "fasttext-wheel",
     "av",
     "ctranslate2",
