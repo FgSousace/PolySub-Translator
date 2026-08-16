@@ -1,4 +1,4 @@
-## PolySub Translator 0.5.10
+## PolySub Translator 0.6.0
 
 - polski lektor Chatterbox pokazuje teraz jawnie, czy synteza działa na GPU Radeon ROCm, czy na CPU;
 - aplikacja odczytuje z workera aktywne i żądane urządzenie, backend oraz dokładny powód fallbacku,
@@ -14,8 +14,8 @@
 
 ## Pobieranie
 
-- **Setup EXE:** pobierz `PolySub-Translator-Setup-0.5.10.exe` i uruchom instalator.
-- **ZIP z instalatorem:** pobierz `PolySub-Translator-Installer-0.5.10.zip`, rozpakuj i uruchom
+- **Setup EXE:** pobierz `PolySub-Translator-Setup-0.6.0.exe` i uruchom instalator.
+- **ZIP z instalatorem:** pobierz `PolySub-Translator-Installer-0.6.0.zip`, rozpakuj i uruchom
   znajdujący się w środku plik Setup.
 - **Sumy kontrolne:** `SHA256SUMS.txt` pozwala zweryfikować pobrany plik.
 
