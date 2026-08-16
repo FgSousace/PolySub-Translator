@@ -142,3 +142,37 @@ def test_chatterbox_worker_loads_v3_with_released_017_api(tmp_path: Path) -> Non
         "tokenizer",
         str(tmp_path / "grapheme_mtl_merged_expanded_v1.json"),
     )
+
+
+def test_chatterbox_worker_falls_back_to_cpu_when_rocm_load_fails(tmp_path: Path) -> None:
+    worker = _load_worker_module()
+    calls: list[str] = []
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def empty_cache():
+            calls.append("empty-cache")
+
+    fake_torch = SimpleNamespace(cuda=FakeCuda())
+
+    def fake_loader(_model_dir, *, device):
+        calls.append(device)
+        if device == "cuda:0":
+            raise RuntimeError("symulowany błąd HIP")
+        return SimpleNamespace(device=device)
+
+    model, device, fallback = worker._load_with_device_fallback(
+        tmp_path,
+        "cuda:0",
+        loader=fake_loader,
+        torch_module=fake_torch,
+    )
+
+    assert model.device == "cpu"
+    assert device == "cpu"
+    assert fallback == "symulowany błąd HIP"
+    assert calls == ["cuda:0", "empty-cache", "cpu"]
