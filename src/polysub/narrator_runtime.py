@@ -26,7 +26,7 @@ from .amd_runtime import (
 from .compute_devices import detect_hardware_snapshot
 
 CHATTERBOX_VERSION = "0.1.7"
-AMD_TORCHAUDIO_VERSION = "2.11.0"
+AMD_TORCHAUDIO_VERSION = "2.12.0"
 NARRATOR_RUNTIME_SCHEMA = 2
 StatusCallback = Callable[[str], None]
 
