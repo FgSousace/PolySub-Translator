@@ -2,7 +2,12 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import polysub.amd_runtime as amd_runtime
 import polysub.narrator_runtime as narrator_runtime
+
+
+def test_rocm_audio_stack_matches_pytorch_release() -> None:
+    assert narrator_runtime.AMD_TORCHAUDIO_VERSION == amd_runtime.ROCM_PYTORCH_VERSION
 
 
 def test_narrator_worker_environment_forces_cpu(monkeypatch) -> None:
