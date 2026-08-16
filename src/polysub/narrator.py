@@ -101,7 +101,8 @@ class ChatterboxNarrator:
                     status(f"⚠ Chatterbox spadł z GPU na CPU podczas ładowania: {detail}")
                     raise NarrationError(
                         "Chatterbox nie utrzymał się na Radeonie i przełączył się na CPU. "
-                        "Render został przerwany, żeby nie wykonywać wielogodzinnej syntezy na CPU. "
+                        "Render został przerwany, żeby nie wykonywać wielogodzinnej "
+                        "syntezy na CPU. "
                         f"Powód GPU: {detail}"
                     )
                 if worker.active_device.startswith("cuda"):
