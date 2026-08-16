@@ -25,7 +25,7 @@ def test_version_is_consistent_in_python_project_and_installer() -> None:
     numeric_version = ", ".join(__version__.split(".")) + ", 0"
 
     assert project["project"]["version"] == __version__
-    assert __version__ == "0.5.10"
+    assert __version__ == "0.6.0"
     assert installer_version is not None
     assert installer_version.group(1) == __version__
     assert "OutputBaseFilename=PolySub-Translator-Setup-{#MyAppVersion}" in installer
