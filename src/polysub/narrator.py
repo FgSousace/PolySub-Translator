@@ -11,6 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .narrator_runtime import (
+    active_narrator_runtime,
     install_narrator_runtime,
     narrator_worker_environment,
     narrator_worker_script,
@@ -76,17 +77,38 @@ class ChatterboxNarrator:
             python_path = self.runtime_installer(status)
         except Exception as exc:
             raise NarrationError(f"Nie udało się przygotować Chatterbox: {exc}") from exc
+        runtime = active_narrator_runtime()
+        strict_gpu = runtime.backend == "rocm"
 
         with TemporaryDirectory(prefix="polysub-narrator-") as temporary_name:
             temporary = Path(temporary_name)
             threads = cpu_allocation(cpu_usage_limit).threads
-            status(
-                "Wczytywanie Chatterbox Multilingual V3 i jednego głosu lektora "
-                f"({threads} wątków CPU)…"
-            )
+            if strict_gpu:
+                status(
+                    "Wczytywanie Chatterbox Multilingual V3 na GPU — "
+                    f"{runtime.label}…"
+                )
+            else:
+                status(
+                    "Wczytywanie Chatterbox Multilingual V3 na CPU "
+                    f"({threads} wątków)…"
+                )
             worker = _NarratorWorker(python_path, model, threads=threads)
             try:
                 sample_rate = worker.start()
+                if worker.active_device == "cpu" and strict_gpu:
+                    detail = worker.last_fallback or "worker nie utrzymał modelu na urządzeniu ROCm"
+                    status(f"⚠ Chatterbox spadł z GPU na CPU podczas ładowania: {detail}")
+                    raise NarrationError(
+                        "Chatterbox nie utrzymał się na Radeonie i przełączył się na CPU. "
+                        "Render został przerwany, żeby nie wykonywać wielogodzinnej syntezy na CPU. "
+                        f"Powód GPU: {detail}"
+                    )
+                if worker.active_device.startswith("cuda"):
+                    status(f"Chatterbox: GPU aktywne — {runtime.label}.")
+                else:
+                    status(f"Chatterbox: aktywne urządzenie — {worker.active_device}.")
+
                 clips: list[tuple[SRTCue, Path]] = []
                 total = len(document.cues)
                 progress(0, total)
@@ -95,9 +117,20 @@ class ChatterboxNarrator:
                     if not text:
                         progress(position, total)
                         continue
-                    status(f"Lektor: kwestia {position} z {total}…")
+                    device_label = "GPU" if worker.active_device.startswith("cuda") else "CPU"
+                    status(f"Lektor: kwestia {position} z {total} • {device_label}…")
                     clip = temporary / f"cue-{position:06d}.wav"
-                    worker.synthesize(text, clip)
+                    fallback = worker.synthesize(text, clip)
+                    if worker.active_device == "cpu" and strict_gpu:
+                        detail = fallback or worker.last_fallback or "błąd operacji ROCm"
+                        status(
+                            f"⚠ Chatterbox przełączył się na CPU przy kwestii {position}: {detail}"
+                        )
+                        raise NarrationError(
+                            f"Chatterbox spadł z Radeona na CPU przy kwestii {position} z {total}. "
+                            "Render został przerwany zamiast kontynuować bardzo wolno na CPU. "
+                            f"Powód GPU: {detail}"
+                        )
                     clip = self._fit_clip(ffmpeg, clip, cue, temporary)
                     clips.append((cue, clip))
                     progress(position, total)
@@ -313,6 +346,10 @@ class _NarratorWorker:
         self.process: subprocess.Popen[str] | None = None
         self._diagnostic_lines: list[str] = []
         self._stderr_thread: threading.Thread | None = None
+        self.requested_device = "cpu"
+        self.active_device = "cpu"
+        self.backend = "cpu"
+        self.last_fallback: str | None = None
 
     def start(self) -> int:
         script = narrator_worker_script()
@@ -349,9 +386,14 @@ class _NarratorWorker:
         payload = self._read_payload()
         if not payload.get("ready"):
             raise NarrationError(str(payload.get("error") or "Chatterbox nie zgłosił gotowości."))
+        self.active_device = str(payload.get("device") or "cpu")
+        self.requested_device = str(payload.get("requested_device") or self.active_device)
+        self.backend = str(payload.get("backend") or "cpu")
+        fallback = payload.get("fallback")
+        self.last_fallback = str(fallback) if fallback else None
         return int(payload.get("sample_rate") or 24000)
 
-    def synthesize(self, text: str, output: Path) -> None:
+    def synthesize(self, text: str, output: Path) -> str | None:
         process = self._require_process()
         assert process.stdin is not None
         process.stdin.write(
@@ -372,6 +414,10 @@ class _NarratorWorker:
         payload = self._read_payload()
         if not payload.get("ok") or not output.is_file():
             raise NarrationError(str(payload.get("error") or "Nie powstał plik głosu."))
+        self.active_device = str(payload.get("device") or self.active_device)
+        fallback = payload.get("fallback")
+        self.last_fallback = str(fallback) if fallback else None
+        return self.last_fallback
 
     def close(self) -> None:
         process = self.process
