@@ -6,8 +6,9 @@ import polysub.amd_runtime as amd_runtime
 import polysub.narrator_runtime as narrator_runtime
 
 
-def test_rocm_audio_stack_matches_pytorch_release() -> None:
-    assert narrator_runtime.AMD_TORCHAUDIO_VERSION == amd_runtime.ROCM_PYTORCH_VERSION
+def test_rocm_audio_stack_uses_amd_supported_windows_pairing() -> None:
+    assert amd_runtime.ROCM_PYTORCH_VERSION == "2.12.0"
+    assert narrator_runtime.AMD_TORCHAUDIO_VERSION == "2.11.0"
 
 
 def test_narrator_worker_environment_forces_cpu(monkeypatch) -> None:
@@ -176,3 +177,4 @@ def test_windows_narrator_runtime_prefers_rx_9070_xt_rocm(
     assert manifest["device"] == "cuda:0"
     assert manifest["device_index"] == 1
     assert manifest["rocm_version"] == narrator_runtime.ROCM_VERSION
+    assert manifest["torchaudio_version"] == "2.11.0"
