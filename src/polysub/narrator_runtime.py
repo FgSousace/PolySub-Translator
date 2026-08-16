@@ -139,7 +139,8 @@ def install_narrator_runtime(status: StatusCallback | None = None) -> Path:
                 device_index=device_index,
             ):
                 raise NarratorRuntimeError(
-                    "Chatterbox został zainstalowany w środowisku AMD, ale test ROCm/GPU nie przeszedł."
+                    "Chatterbox został zainstalowany w środowisku AMD, ale test "
+                    "ROCm/GPU nie przeszedł."
                 )
             gpu_label = amd_status.devices[0] if amd_status.devices else "AMD Radeon"
             _ACTIVE_RUNTIME = NarratorRuntimeSelection(
