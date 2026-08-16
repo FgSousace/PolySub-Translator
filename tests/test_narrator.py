@@ -64,6 +64,62 @@ def test_narrator_worker_ignores_dependency_logs_before_json(tmp_path) -> None:
     ]
 
 
+def test_narrator_worker_exposes_rocm_device_after_start(tmp_path, monkeypatch) -> None:
+    script = tmp_path / "narrator_worker_entry.py"
+    script.write_text("# test worker", encoding="utf-8")
+    process = SimpleNamespace(
+        stdout=iter(
+            (
+                '{"ready": true, "sample_rate": 24000, "device": "cuda:0", '
+                '"requested_device": "cuda:0", "backend": "rocm", "fallback": null}\n',
+            )
+        ),
+        stderr=iter(()),
+    )
+    monkeypatch.setattr("polysub.narrator.narrator_worker_script", lambda: script)
+    monkeypatch.setattr("polysub.narrator.narrator_worker_environment", lambda _threads: {})
+    monkeypatch.setattr("polysub.narrator.subprocess.Popen", lambda *_args, **_kwargs: process)
+
+    worker = _NarratorWorker(tmp_path / "python.exe", tmp_path / "model")
+    sample_rate = worker.start()
+
+    assert sample_rate == 24000
+    assert worker.backend == "rocm"
+    assert worker.requested_device == "cuda:0"
+    assert worker.active_device == "cuda:0"
+    assert worker.last_fallback is None
+
+
+def test_narrator_worker_exposes_generation_fallback(tmp_path, monkeypatch) -> None:
+    class FakeInput:
+        def write(self, _value):
+            return None
+
+        def flush(self):
+            return None
+
+    output = tmp_path / "cue.wav"
+    worker = _NarratorWorker(tmp_path / "python.exe", tmp_path / "model")
+    worker.process = SimpleNamespace(stdin=FakeInput())
+    worker.active_device = "cuda:0"
+
+    def fake_payload():
+        output.write_bytes(b"wav")
+        return {
+            "ok": True,
+            "device": "cpu",
+            "fallback": "HIP operation is not supported",
+        }
+
+    monkeypatch.setattr(worker, "_read_payload", fake_payload)
+
+    fallback = worker.synthesize("Test", output)
+
+    assert worker.active_device == "cpu"
+    assert fallback == "HIP operation is not supported"
+    assert worker.last_fallback == fallback
+
+
 def test_narrator_mix_copies_video_and_mixes_quiet_original(tmp_path, monkeypatch) -> None:
     video = tmp_path / "film.mp4"
     narration = tmp_path / "voice.wav"
