@@ -59,7 +59,7 @@ def narrator_runtime_python() -> Path:
 
 
 def narrator_runtime_manifest(python_path: Path | None = None) -> Path:
-    root = Path(python_path).parent if python_path is not None else narrator_runtime_directory()
+    root = python_path.parent if python_path is not None else narrator_runtime_directory()
     return root / "polysub-narrator-runtime.json"
 
 
