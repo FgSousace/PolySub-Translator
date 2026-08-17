@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import re
 import shutil
 import subprocess
 import zipfile
@@ -450,14 +449,16 @@ def _install_microsoft_whisper_sample(runtime_dir: Path, status: Any) -> None:
             )
             if license_member is not None:
                 with archive.open(license_member) as source:
-                    (runtime_dir / "MICROSOFT_WHISPER_SAMPLE_LICENSE.txt").write_bytes(source.read())
+                    license_path = runtime_dir / "MICROSOFT_WHISPER_SAMPLE_LICENSE.txt"
+                    license_path.write_bytes(source.read())
         if extracted < 8 or not (staging / "__init__.py").is_file():
             raise WhisperDirectMLError("Archiwum Microsoftu nie zawiera kompletnego Whispera.")
         shutil.rmtree(target, ignore_errors=True)
         staging.replace(target)
     except (OSError, zipfile.BadZipFile) as exc:
         shutil.rmtree(staging, ignore_errors=True)
-        raise WhisperDirectMLError(f"Nie udało się przygotować kodu Whisper DirectML: {exc}") from exc
+        message = f"Nie udało się przygotować kodu Whisper DirectML: {exc}"
+        raise WhisperDirectMLError(message) from exc
 
 
 def _directml_runtime_ready(python_path: Path) -> bool:
