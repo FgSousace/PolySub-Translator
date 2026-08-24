@@ -128,6 +128,21 @@ def _clear_accelerator_cache(torch_module) -> None:
     gc.collect()
 
 
+def _gpu_memory_snapshot(torch_module, active_device: str) -> dict[str, int]:
+    if not str(active_device).startswith("cuda"):
+        return {}
+    try:
+        free, total = torch_module.cuda.mem_get_info(0)
+        return {
+            "vram_total": int(total),
+            "vram_free": int(free),
+            "vram_allocated": int(torch_module.cuda.memory_allocated(0)),
+            "vram_reserved": int(torch_module.cuda.memory_reserved(0)),
+        }
+    except Exception:
+        return {}
+
+
 def _load_with_device_fallback(
     model_dir: Path,
     requested_device: str,
@@ -200,6 +215,14 @@ def main() -> int:
 
         torch.set_num_threads(max(args.threads, 1))
         torch.set_num_interop_threads(1)
+        try:
+            torch.set_float32_matmul_precision("high")
+        except (AttributeError, RuntimeError):
+            pass
+        try:
+            torch.backends.cudnn.benchmark = True
+        except (AttributeError, RuntimeError):
+            pass
         _use_local_chatterbox_assets(args.model_dir)
 
         requested_device = str(args.device or "cpu")
@@ -209,16 +232,16 @@ def main() -> int:
             torch_module=torch,
         )
         sample_rate = int(model.sr)
-        _reply(
-            {
-                "ready": True,
-                "sample_rate": sample_rate,
-                "device": active_device,
-                "requested_device": requested_device,
-                "backend": os.getenv("POLYSUB_NARRATOR_BACKEND", "cpu"),
-                "fallback": load_fallback,
-            }
-        )
+        ready_payload = {
+            "ready": True,
+            "sample_rate": sample_rate,
+            "device": active_device,
+            "requested_device": requested_device,
+            "backend": os.getenv("POLYSUB_NARRATOR_BACKEND", "cpu"),
+            "fallback": load_fallback,
+        }
+        ready_payload.update(_gpu_memory_snapshot(torch, active_device))
+        _reply(ready_payload)
         for line in sys.stdin:
             try:
                 request = json.loads(line)

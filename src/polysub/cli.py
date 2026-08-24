@@ -9,7 +9,13 @@ from .detector import LanguageDetectionError, detect_language
 from .engines import DeepLEngine, TranslationEngineError, create_local_engine
 from .model_downloads import ModelDownloadError, download_model, model_status
 from .models import TranslationMode
-from .narrator import ChatterboxNarrator, NarrationError, narrator_video_output_path
+from .narrator import (
+    DEFAULT_NARRATOR_PACE_ID,
+    NARRATOR_PACE_PROFILES,
+    ChatterboxNarrator,
+    NarrationError,
+    narrator_video_output_path,
+)
 from .narrator_models import CHATTERBOX_MULTILINGUAL_V3
 from .performance import CPU_USAGE_OPTIONS, DEFAULT_CPU_USAGE
 from .service import TranslationOptions, TranslationService
@@ -126,6 +132,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--polish-narrator",
         action="store_true",
         help="Utwórz jeden polski głos Chatterbox i zmiksuj go z cichszym oryginałem",
+    )
+    parser.add_argument(
+        "--narrator-pace",
+        choices=tuple(profile.id for profile in NARRATOR_PACE_PROFILES),
+        default=DEFAULT_NARRATOR_PACE_ID,
+        help="Tempo lektora: slow, comfortable, natural albo sync",
     )
     parser.add_argument(
         "--video-output",
@@ -285,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
                 chatterbox_status.snapshot_path,
                 output_path=video_output,
                 cpu_usage_limit=args.cpu_limit,
+                pace_profile=args.narrator_pace,
                 status=print,
                 progress=lambda done, total: print(
                     f"\rLektor: {done} z {total} kwestii", end="", flush=True

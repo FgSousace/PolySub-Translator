@@ -1,13 +1,13 @@
 # PolySub Translator™ — instrukcja obsługi
 
-**Wersja 0.5.6 • autor: FgSousace • użytek niekomercyjny**
+**Wersja 0.6.1 • autor: FgSousace • użytek niekomercyjny**
 
 Ta instrukcja prowadzi od wyboru pliku do gotowego filmu. Program nigdy nie
 nadpisuje oryginału.
 
 ## 1. Instalacja
 
-1. Pobierz `PolySub-Translator-Setup-0.5.6.exe` z oficjalnej strony GitHub Releases.
+1. Pobierz `PolySub-Translator-Setup-0.6.1.exe` z oficjalnej strony GitHub Releases.
 2. Uruchom instalator, wybierz folder i kliknij **Instaluj**.
 3. Przy pierwszym uruchomieniu otwórz **Pobierz / usuń…** i pobierz co najmniej
    jeden model lokalny albo wybierz silnik DeepL i wpisz swój klucz API.
@@ -28,18 +28,18 @@ Po wyborze aplikacja opisuje typ, rozmiar, liczbę kwestii i liczbę słów.
 
 ## 3. Najprostsze tłumaczenie
 
-1. Kliknij **Wyszukaj napisy w filmie lub wybierz plik**.
-2. Wskaż SRT albo film. Po przygotowaniu pliku główny przycisk zmieni nazwę
-   na **Rozpocznij tłumaczenie**.
-3. Sprawdź wykryty język i wybierz język docelowy.
-4. Wybierz silnik:
+1. W kroku **Wybierz plik** wskaż SRT albo film.
+2. W kroku **Tłumaczenie** sprawdź języki i wybierz silnik:
    - **Lokalny AI** — lista pokazuje tylko modele już pobrane i gotowe;
    - **DeepL API** — wpisz klucz, który nie jest zapisywany.
-5. Zaznacz dokładnie jeden wymagany checkbox:
+3. Zaznacz dokładnie jeden sposób pracy:
    - **Tłumacz automatycznie** — zapisuje gotowy SRT;
    - **Tłumacz z weryfikacją** — otwiera edytor problematycznych kwestii.
-6. Zostaw urządzenie **Automatycznie** albo wybierz faktycznie gotowy CPU/GPU.
-7. Wybierz profil czasu napisów i kliknij **Rozpocznij tłumaczenie**.
+4. W kroku **Czytelność** wybierz profil czasu i kliknij **Rozpocznij tłumaczenie**.
+5. W kroku **Polski lektor** wybierz tempo, a w **Gotowym filmie** sposób eksportu.
+
+Urządzenie, limit CPU, modele i wygląd są w **Zaawansowanych**. Dotychczasowy układ ze
+wszystkimi ustawieniami na jednym ekranie można w każdej chwili wybrać jako **Klasyczny**.
 
 ## 4. Anulowanie i wznowienie
 
@@ -93,6 +93,9 @@ pobranie na Windows użyje zwykłych plików zamiast problematycznych symlinków
   można korzystać z bezpiecznej drogi CPU. Gdy Ryzen udostępnia dodatkowe iGPU,
   program automatycznie pomija je i izoluje właściwą kartę dyskretną. Nieudana
   albo przerwana instalacja ROCm jest dokańczana przy ponownym uruchomieniu.
+- **Whisper DirectML:** na Radeonie i Intel GPU rozpoznawanie mowy może działać przez
+  Windows DirectML/DirectX 12 w osobnym środowisku. Pierwsze użycie pobiera natywny model
+  Whisper; później działa z lokalnego cache. Nie zmienia to bibliotek CUDA ani ROCm.
 - **CPU Intel/AMD:** zawsze dostępna droga awaryjna. Ustawienie 100% przekazuje
   modelowi wszystkie logiczne wątki, ale nie obniża jakości.
 
@@ -119,14 +122,16 @@ Po przetłumaczeniu napisów filmu możesz wybrać:
 1. Przetłumacz napisy filmu na polski.
 2. W menedżerze, w zakładce **Lektor**, pobierz Chatterbox Multilingual V3
    (około 3,25 GB). Pobierane są wyłącznie pliki potrzebne wariantowi V3.
-3. Kliknij **Utwórz film z polskim lektorem** i wskaż wynikowy plik MKV.
+3. Wybierz tempo: **Bardzo spokojny**, **Spokojny**, **Naturalny** albo
+   **Ścisłe dopasowanie**.
+4. Kliknij **Utwórz film z polskim lektorem** i wskaż wynikowy plik MKV.
 
-Program czyta wszystkie kwestie jednym wbudowanym głosem, zachowuje ich timestampy,
-umiarkowanie przyspiesza zbyt długie kwestie i miksuje mowę z oryginałem ściszonym
-do 28%. Obraz jest kopiowany bez utraty jakości. Przy pierwszym użyciu Windows tworzy
-prywatne środowisko Chatterbox z PyTorch 2.6, odizolowane od środowiska NVIDIA i AMD
-aplikacji. Synteza V3 działa obecnie na CPU, dlatego długi film może powstawać dłużej
-niż trwa jego odtworzenie; używa limitu procesora wybranego w głównym oknie.
+Program czyta wszystkie kwestie jednym wbudowanym głosem i miksuje mowę z oryginałem
+ściszonym do 28%. Profil domyślny mówi około 0,90×, wykorzystuje wolną przerwę przed
+następną kwestią i nie przekracza 1,08×. Na zgodnym Radeonie cały model pozostaje w VRAM,
+a PolySub po wczytaniu odczytuje wolną pamięć i może uruchomić dwa równoległe workery.
+Oficjalna szybka ścieżka V3 usuwa kosztowne kopiowanie uwagi GPU→CPU po każdym tokenie.
+Jeżeli VRAM-u jest za mało, program bezpiecznie pozostaje przy jednym workerze.
 Chatterbox dodaje do wygenerowanego dźwięku swój
 neuronowy znak wodny.
 

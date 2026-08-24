@@ -25,7 +25,7 @@ def test_version_is_consistent_in_python_project_and_installer() -> None:
     numeric_version = ", ".join(__version__.split(".")) + ", 0"
 
     assert project["project"]["version"] == __version__
-    assert __version__ == "0.6.0"
+    assert __version__ == "0.6.1"
     assert installer_version is not None
     assert installer_version.group(1) == __version__
     assert "OutputBaseFilename=PolySub-Translator-Setup-{#MyAppVersion}" in installer
@@ -77,6 +77,8 @@ def test_historical_release_notes_are_separate_and_version_specific() -> None:
         "v0.5.7",
         "v0.5.8",
         "v0.5.9",
+        "v0.5.10",
+        "v0.6.0",
     }
 
     assert {path.stem for path in notes} == expected
@@ -140,3 +142,11 @@ def test_cli_accepts_every_catalog_model() -> None:
 
     assert model_action.default == DEFAULT_MODEL_ID
     assert tuple(model_action.choices) == tuple(model.id for model in MODEL_CATALOG)
+
+
+def test_cli_exposes_narrator_pace_profiles() -> None:
+    args = build_parser().parse_args(
+        ["film.mp4", "--polish-narrator", "--narrator-pace", "slow"]
+    )
+
+    assert args.narrator_pace == "slow"

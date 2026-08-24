@@ -6,6 +6,7 @@ import subprocess
 import threading
 import wave
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,6 +22,90 @@ from .subtitles import SRTCue, SRTDocument
 
 StatusCallback = Callable[[str], None]
 NarrationProgressCallback = Callable[[int, int], None]
+GIB = 1024**3
+
+
+@dataclass(frozen=True)
+class NarratorPaceProfile:
+    id: str
+    label: str
+    description: str
+    speech_rate: float
+    max_fit_speed: float
+    safety_gap_seconds: float = 0.12
+
+
+NARRATOR_PACE_PROFILES = (
+    NarratorPaceProfile(
+        "slow",
+        "Bardzo spokojny — około 0,82×",
+        "Najwolniejsze, wyraźne mówienie; może lekko wyjść poza krótki napis.",
+        0.82,
+        1.00,
+    ),
+    NarratorPaceProfile(
+        "comfortable",
+        "Spokojny — około 0,90× (zalecany)",
+        "Wyraźny głos, wykorzystanie przerw między napisami i maksymalnie 1,08×.",
+        0.90,
+        1.08,
+    ),
+    NarratorPaceProfile(
+        "natural",
+        "Naturalny — 1,00×",
+        "Naturalne tempo z delikatnym dopasowaniem do krótkich kwestii do 1,15×.",
+        1.00,
+        1.15,
+    ),
+    NarratorPaceProfile(
+        "sync",
+        "Ścisłe dopasowanie — maks. 1,25×",
+        "Priorytetem jest zmieszczenie głosu w napisach; najszybszy wariant.",
+        1.00,
+        1.25,
+    ),
+)
+DEFAULT_NARRATOR_PACE_ID = "comfortable"
+NARRATOR_PACE_BY_ID = {profile.id: profile for profile in NARRATOR_PACE_PROFILES}
+NARRATOR_PACE_ID_BY_LABEL = {profile.label: profile.id for profile in NARRATOR_PACE_PROFILES}
+
+
+def get_narrator_pace_profile(
+    value: str | NarratorPaceProfile | None,
+) -> NarratorPaceProfile:
+    if isinstance(value, NarratorPaceProfile):
+        return value
+    key = str(value or DEFAULT_NARRATOR_PACE_ID).strip()
+    profile_id = NARRATOR_PACE_ID_BY_LABEL.get(key, key)
+    try:
+        return NARRATOR_PACE_BY_ID[profile_id]
+    except KeyError as exc:
+        raise NarrationError(f"Nieznany profil tempa lektora: {value}") from exc
+
+
+def recommended_narrator_worker_count(
+    *,
+    cue_count: int,
+    active_device: str,
+    vram_total: int,
+    vram_free: int,
+    vram_reserved: int,
+) -> int:
+    """Choose a conservative number of persistent models for one GPU."""
+
+    if not str(active_device).startswith("cuda") or cue_count < 8 or vram_total < 12 * GIB:
+        return 1
+    first_model = max(int(vram_reserved), 3 * GIB)
+    margin = 1 * GIB
+    if vram_free < int(first_model * 1.25) + margin:
+        return 1
+    if (
+        vram_total >= 24 * GIB
+        and cue_count >= 18
+        and vram_free >= int(first_model * 2.5) + margin
+    ):
+        return 3
+    return 2
 
 
 class NarrationError(RuntimeError):
@@ -33,6 +118,8 @@ class NarrationResult:
     cue_count: int
     sample_rate: int
     original_volume: float
+    pace_profile: str = DEFAULT_NARRATOR_PACE_ID
+    worker_count: int = 1
 
 
 class ChatterboxNarrator:
@@ -56,6 +143,7 @@ class ChatterboxNarrator:
         output_path: str | Path | None = None,
         original_volume: float = 0.28,
         cpu_usage_limit: int = DEFAULT_CPU_USAGE,
+        pace_profile: str | NarratorPaceProfile = DEFAULT_NARRATOR_PACE_ID,
         status: StatusCallback | None = None,
         progress: NarrationProgressCallback | None = None,
     ) -> NarrationResult:
@@ -65,6 +153,7 @@ class ChatterboxNarrator:
         subtitles = Path(subtitle_path)
         model = Path(model_path)
         output = Path(output_path) if output_path else narrator_video_output_path(video)
+        pace = get_narrator_pace_profile(pace_profile)
         self._validate(video, subtitles, model, output, original_volume)
         output.parent.mkdir(parents=True, exist_ok=True)
         document = SRTDocument.load(subtitles)
@@ -93,11 +182,16 @@ class ChatterboxNarrator:
                     "Wczytywanie Chatterbox Multilingual V3 na CPU "
                     f"({threads} wątków)…"
                 )
-            worker = _NarratorWorker(python_path, model, threads=threads)
+            worker_threads = min(threads, 4) if strict_gpu else threads
+            workers = [_NarratorWorker(python_path, model, threads=worker_threads)]
+            worker_count = 1
             try:
-                sample_rate = worker.start()
-                if worker.active_device == "cpu" and strict_gpu:
-                    detail = worker.last_fallback or "worker nie utrzymał modelu na urządzeniu ROCm"
+                sample_rate = workers[0].start()
+                if workers[0].active_device == "cpu" and strict_gpu:
+                    detail = (
+                        workers[0].last_fallback
+                        or "worker nie utrzymał modelu na urządzeniu ROCm"
+                    )
                     status(f"⚠ Chatterbox spadł z GPU na CPU podczas ładowania: {detail}")
                     raise NarrationError(
                         "Chatterbox nie utrzymał się na Radeonie i przełączył się na CPU. "
@@ -105,38 +199,120 @@ class ChatterboxNarrator:
                         "syntezy na CPU. "
                         f"Powód GPU: {detail}"
                     )
-                if worker.active_device.startswith("cuda"):
-                    status(f"Chatterbox: GPU aktywne — {runtime.label}.")
+                if workers[0].active_device.startswith("cuda"):
+                    memory = workers[0].vram_total
+                    memory_label = f" • {memory / GIB:.1f} GB VRAM" if memory else ""
+                    status(f"Chatterbox: GPU aktywne — {runtime.label}{memory_label}.")
                 else:
-                    status(f"Chatterbox: aktywne urządzenie — {worker.active_device}.")
+                    status(
+                        f"Chatterbox: aktywne urządzenie — {workers[0].active_device}."
+                    )
 
-                clips: list[tuple[SRTCue, Path]] = []
+                worker_count = recommended_narrator_worker_count(
+                    cue_count=len(document.cues),
+                    active_device=workers[0].active_device,
+                    vram_total=workers[0].vram_total,
+                    vram_free=workers[0].vram_free,
+                    vram_reserved=workers[0].vram_reserved,
+                )
+                for worker_index in range(1, worker_count):
+                    extra = _NarratorWorker(python_path, model, threads=worker_threads)
+                    try:
+                        extra.start()
+                        if not extra.active_device.startswith("cuda"):
+                            raise NarrationError(
+                                extra.last_fallback or "dodatkowy worker nie uruchomił się na GPU"
+                            )
+                    except Exception as exc:
+                        extra.close()
+                        worker_count = len(workers)
+                        status(
+                            "VRAM nie pozwolił uruchomić kolejnego równoległego głosu — "
+                            f"pozostaje {worker_count} worker. Szczegóły: {str(exc)[-500:]}"
+                        )
+                        break
+                    workers.append(extra)
+                    status(
+                        f"Chatterbox: uruchomiono worker GPU {worker_index + 1} z "
+                        f"{worker_count} — kwestie będą liczone równolegle."
+                    )
+
                 total = len(document.cues)
                 progress(0, total)
+                tasks: list[tuple[int, SRTCue, str, float | None]] = []
                 for position, cue in enumerate(document.cues, start=1):
                     text = " ".join(cue.visible_text.replace("\\N", " ").split())
                     if not text:
-                        progress(position, total)
                         continue
-                    device_label = "GPU" if worker.active_device.startswith("cuda") else "CPU"
-                    status(f"Lektor: kwestia {position} z {total} • {device_label}…")
-                    clip = temporary / f"cue-{position:06d}.wav"
-                    fallback = worker.synthesize(text, clip)
-                    if worker.active_device == "cpu" and strict_gpu:
-                        detail = fallback or worker.last_fallback or "błąd operacji ROCm"
-                        status(
-                            f"⚠ Chatterbox przełączył się na CPU przy kwestii {position}: {detail}"
+                    next_start = None
+                    if position < total:
+                        next_start, _ = parse_srt_timing(document.cues[position].timing)
+                    tasks.append((position, cue, text, next_start))
+
+                completed = total - len(tasks)
+                if completed:
+                    progress(completed, total)
+                completed_lock = threading.Lock()
+
+                def render_batch(
+                    active_worker: _NarratorWorker,
+                    batch: list[tuple[int, SRTCue, str, float | None]],
+                ) -> list[tuple[int, SRTCue, Path]]:
+                    nonlocal completed
+                    rendered: list[tuple[int, SRTCue, Path]] = []
+                    for position, cue, text, next_start in batch:
+                        device_label = (
+                            "GPU" if active_worker.active_device.startswith("cuda") else "CPU"
                         )
-                        raise NarrationError(
-                            f"Chatterbox spadł z Radeona na CPU przy kwestii {position} z {total}. "
-                            "Render został przerwany zamiast kontynuować bardzo wolno na CPU. "
-                            f"Powód GPU: {detail}"
+                        status(f"Lektor: kwestia {position} z {total} • {device_label}…")
+                        clip = temporary / f"cue-{position:06d}.wav"
+                        fallback = active_worker.synthesize(text, clip)
+                        if active_worker.active_device == "cpu" and strict_gpu:
+                            detail = (
+                                fallback
+                                or active_worker.last_fallback
+                                or "błąd operacji ROCm"
+                            )
+                            raise NarrationError(
+                                f"Chatterbox spadł z Radeona na CPU przy kwestii "
+                                f"{position} z {total}. Render został przerwany zamiast "
+                                f"kontynuować bardzo wolno na CPU. Powód GPU: {detail}"
+                            )
+                        fitted = self._fit_clip(
+                            ffmpeg,
+                            clip,
+                            cue,
+                            temporary,
+                            pace=pace,
+                            next_cue_start=next_start,
                         )
-                    clip = self._fit_clip(ffmpeg, clip, cue, temporary)
-                    clips.append((cue, clip))
-                    progress(position, total)
+                        rendered.append((position, cue, fitted))
+                        with completed_lock:
+                            completed += 1
+                            progress(completed, total)
+                    return rendered
+
+                partitions = [tasks[index:: len(workers)] for index in range(len(workers))]
+                rendered_clips: list[tuple[int, SRTCue, Path]] = []
+                if len(workers) == 1:
+                    rendered_clips.extend(render_batch(workers[0], partitions[0]))
+                else:
+                    with ThreadPoolExecutor(
+                        max_workers=len(workers),
+                        thread_name_prefix="polysub-narrator",
+                    ) as executor:
+                        futures = [
+                            executor.submit(render_batch, active_worker, batch)
+                            for active_worker, batch in zip(workers, partitions, strict=True)
+                            if batch
+                        ]
+                        for future in futures:
+                            rendered_clips.extend(future.result())
+                rendered_clips.sort(key=lambda item: item[0])
+                clips = [(cue, clip) for _position, cue, clip in rendered_clips]
             finally:
-                worker.close()
+                for active_worker in reversed(workers):
+                    active_worker.close()
             if not clips:
                 raise NarrationError("Napisy nie zawierają tekstu, który można przeczytać.")
 
@@ -157,6 +333,8 @@ class ChatterboxNarrator:
             cue_count=len(clips),
             sample_rate=sample_rate,
             original_volume=original_volume,
+            pace_profile=pace.id,
+            worker_count=worker_count,
         )
 
     @staticmethod
@@ -186,17 +364,24 @@ class ChatterboxNarrator:
         clip: Path,
         cue: SRTCue,
         temporary: Path,
+        *,
+        pace: NarratorPaceProfile | str = DEFAULT_NARRATOR_PACE_ID,
+        next_cue_start: float | None = None,
     ) -> Path:
+        pace = get_narrator_pace_profile(pace)
         start, end = parse_srt_timing(cue.timing)
         available = max(end - start, 0.5)
+        if next_cue_start is not None and next_cue_start > start:
+            available = max(
+                available,
+                next_cue_start - start - pace.safety_gap_seconds,
+            )
         with wave.open(str(clip), "rb") as source:
             duration = source.getnframes() / max(source.getframerate(), 1)
-        ratio = duration / available
-        if ratio <= 1.05:
+        required_tempo = duration / available
+        tempo = min(max(pace.speech_rate, required_tempo), pace.max_fit_speed)
+        if abs(tempo - 1.0) <= 0.01:
             return clip
-        # A narrator may slightly overrun a subtitle, but modest acceleration avoids
-        # cumulative drift in rapid dialogue without making the voice unnatural.
-        tempo = min(ratio, 1.35)
         fitted = temporary / f"{clip.stem}.fitted.wav"
         command = [
             ffmpeg,
@@ -351,6 +536,10 @@ class _NarratorWorker:
         self.active_device = "cpu"
         self.backend = "cpu"
         self.last_fallback: str | None = None
+        self.vram_total = 0
+        self.vram_free = 0
+        self.vram_allocated = 0
+        self.vram_reserved = 0
 
     def start(self) -> int:
         script = narrator_worker_script()
@@ -392,6 +581,10 @@ class _NarratorWorker:
         self.backend = str(payload.get("backend") or "cpu")
         fallback = payload.get("fallback")
         self.last_fallback = str(fallback) if fallback else None
+        self.vram_total = int(payload.get("vram_total") or 0)
+        self.vram_free = int(payload.get("vram_free") or 0)
+        self.vram_allocated = int(payload.get("vram_allocated") or 0)
+        self.vram_reserved = int(payload.get("vram_reserved") or 0)
         return int(payload.get("sample_rate") or 24000)
 
     def synthesize(self, text: str, output: Path) -> str | None:

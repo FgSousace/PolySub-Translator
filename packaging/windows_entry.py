@@ -66,14 +66,42 @@ def main() -> None:
     if "--self-test-narrator" in sys.argv:
         import wave
 
-        from polysub.narrator import build_narration_track
-        from polysub.narrator_runtime import narrator_worker_script
+        from polysub.narrator import (
+            DEFAULT_NARRATOR_PACE_ID,
+            GIB,
+            NARRATOR_PACE_BY_ID,
+            build_narration_track,
+            recommended_narrator_worker_count,
+        )
+        from polysub.narrator_runtime import (
+            CHATTERBOX_V3_SOURCE_COMMIT,
+            CHATTERBOX_V3_SOURCE_SHA256,
+            narrator_worker_script,
+        )
         from polysub.subtitles import SRTCue
 
         worker = narrator_worker_script()
         if not worker.is_file():
             raise RuntimeError(f"W pakiecie brakuje workera lektora: {worker}")
-        compile(worker.read_text(encoding="utf-8"), str(worker), "exec")
+        worker_source = worker.read_text(encoding="utf-8")
+        compile(worker_source, str(worker), "exec")
+        if "_gpu_memory_snapshot" not in worker_source:
+            raise RuntimeError("Worker lektora nie raportuje dostępnego VRAM-u.")
+        if len(CHATTERBOX_V3_SOURCE_COMMIT) != 40 or len(CHATTERBOX_V3_SOURCE_SHA256) != 64:
+            raise RuntimeError("Szybki kod Chatterbox V3 nie ma przypiętej wersji i SHA-256.")
+        if NARRATOR_PACE_BY_ID[DEFAULT_NARRATOR_PACE_ID].max_fit_speed > 1.08:
+            raise RuntimeError("Domyślny lektor ponownie mówi zbyt szybko.")
+        if (
+            recommended_narrator_worker_count(
+                cue_count=30,
+                active_device="cuda:0",
+                vram_total=16 * GIB,
+                vram_free=12 * GIB,
+                vram_reserved=4 * GIB,
+            )
+            != 2
+        ):
+            raise RuntimeError("RX 9070 XT nie otrzymał dwóch workerów lektora.")
         with TemporaryDirectory(prefix="polysub-narrator-test-") as temporary_name:
             temporary = Path(temporary_name)
             clip = temporary / "clip.wav"
@@ -89,6 +117,35 @@ def main() -> None:
             )
             if rate != 24000 or not track.is_file() or track.stat().st_size == 0:
                 raise RuntimeError("Test synchronizacji lektora nie utworzył ścieżki WAV.")
+        return
+
+    if "--self-test-directml" in sys.argv:
+        from polysub.compute_devices import ComputeDevice
+        from polysub.whisper_directml import (
+            _WORKER_SOURCE,
+            DIRECTML_SAMPLE_COMMIT,
+            TORCH_DIRECTML_VERSION,
+            _attach_directml_devices,
+        )
+
+        compile(_WORKER_SOURCE, "<polysub-whisper-directml-worker>", "exec")
+        if len(DIRECTML_SAMPLE_COMMIT) != 40 or not TORCH_DIRECTML_VERSION:
+            raise RuntimeError("Backend Whisper DirectML nie ma przypiętych wersji.")
+        if "use_dml_attn=True" not in _WORKER_SOURCE:
+            raise RuntimeError("Worker Whispera nie używa uwagi DirectML.")
+        if '(False, True, "FP32 + znaczniki słów")' not in _WORKER_SOURCE:
+            raise RuntimeError("Worker DirectML nie zaczyna od zgodnego trybu FP32.")
+        radeon = ComputeDevice(
+            id="self-test-radeon",
+            name="AMD Radeon RX 9070 XT",
+            kind="gpu",
+            vendor="AMD",
+            backend="ROCm",
+            translation_target="cuda:0",
+        )
+        attached = _attach_directml_devices([radeon])[0]
+        if not str(attached.transcription_target).startswith("directml|0|"):
+            raise RuntimeError("Radeon nie otrzymał backendu transkrypcji DirectML.")
         return
 
     if "--self-test-branding" in sys.argv:
@@ -499,9 +556,12 @@ def main() -> None:
                     app.about_button,
                     app.appearance_interface_combo,
                     app.appearance_theme_combo,
+                    app.narrator_pace_combo,
+                    app.wizard_back_button,
+                    app.wizard_next_button,
                 )
-                if any(not widget.winfo_manager() for widget in required_widgets):
-                    raise RuntimeError("Nie wszystkie elementy interfejsu zostały rozmieszczone.")
+                if any(not widget.winfo_exists() for widget in required_widgets):
+                    raise RuntimeError("Nie wszystkie elementy interfejsu zostały utworzone.")
                 if hasattr(app, "amd_runtime_button"):
                     raise RuntimeError("GUI nadal zawiera ręczny przycisk konfiguracji AMD.")
                 if "automaty" not in app.amd_runtime_status_var.get().casefold():
@@ -513,16 +573,22 @@ def main() -> None:
                     raise RuntimeError(
                         "Pierwszy krok GUI nie prowadzi do wyboru napisów lub filmu."
                     )
-                if app.mode_var.get():
-                    raise RuntimeError("Tryb tłumaczenia został zaznaczony bez zgody użytkownika.")
-                app.automatic_mode_checked.set(True)
-                app._select_translation_mode(TranslationMode.AUTOMATIC)
                 if (
                     app.mode_var.get() != TranslationMode.AUTOMATIC.value
                     or not app.automatic_mode_checked.get()
                     or app.review_mode_checked.get()
                 ):
-                    raise RuntimeError("Wymagane checkboxy trybu nie są wzajemnie wykluczające.")
+                    raise RuntimeError("Kreator nie wybrał zalecanego trybu automatycznego.")
+                app.review_mode_checked.set(True)
+                app._select_translation_mode(TranslationMode.REVIEW)
+                if (
+                    app.mode_var.get() != TranslationMode.REVIEW.value
+                    or app.automatic_mode_checked.get()
+                    or not app.review_mode_checked.get()
+                ):
+                    raise RuntimeError("Checkboxy trybu nie są wzajemnie wykluczające.")
+                app.automatic_mode_checked.set(True)
+                app._select_translation_mode(TranslationMode.AUTOMATIC)
                 for label in app.model_combo.cget("values"):
                     if label == MODEL_NOT_READY_LABEL:
                         continue
@@ -530,16 +596,26 @@ def main() -> None:
                     if model_id is None or not model_status(get_model_spec(model_id)).installed:
                         raise RuntimeError("Główna lista pokazała model, który nie jest gotowy.")
                 _record_self_test_trace("GUI: tryb i lista modeli są poprawne")
-                if len(app._modern_nav_buttons) != 5:
-                    raise RuntimeError("Nowy interfejs nie zawiera pięciu skrótów nawigacji.")
+                if len(app._modern_nav_buttons) != 6:
+                    raise RuntimeError("Kreator nie zawiera pięciu kroków i ustawień.")
                 if set(app._content_sections) != {
                     "start",
                     "translation",
-                    "models",
-                    "film",
-                    "settings",
+                    "timing",
+                    "narrator",
+                    "export",
+                    "advanced",
                 }:
-                    raise RuntimeError("Nowa nawigacja nie prowadzi do wszystkich sekcji.")
+                    raise RuntimeError("Kreator nie prowadzi do wszystkich etapów.")
+                app._show_wizard_step("narrator")
+                app.update_idletasks()
+                if app._wizard_current_step != "narrator":
+                    raise RuntimeError("Kreator nie przełącza ekranu lektora.")
+                if app.narrator_pace_combo.winfo_manager() != "grid":
+                    raise RuntimeError("Ekran lektora nie pokazuje wyboru tempa.")
+                if "zalecany" not in app.narrator_pace_var.get().casefold():
+                    raise RuntimeError("Spokojne tempo lektora nie jest ustawieniem domyślnym.")
+                app._show_wizard_step("timing")
                 if len(app.timing_profile_buttons) != 5:
                     raise RuntimeError("Panel czasu napisów nie zawiera pięciu profili.")
                 if app.timing_var.get() != "recommended":
@@ -571,6 +647,8 @@ def main() -> None:
 
                 app.target_var.set("English (en)")
                 app.context_text.insert("1.0", "Zachowaj luźny ton.")
+                selected_pace = "Bardzo spokojny — około 0,82×"
+                app.narrator_pace_var.set(selected_pace)
                 app._apply_appearance(MODERN_INTERFACE, "oled")
                 _record_self_test_trace("GUI: motyw OLED zastosowany")
                 if app.theme.id != "oled" or app.cget("background") != "#000000":
@@ -586,6 +664,8 @@ def main() -> None:
                     raise RuntimeError("Przełączenie interfejsu zgubiło ustawienia formularza.")
                 if app.context_text.get("1.0", "end-1c") != "Zachowaj luźny ton.":
                     raise RuntimeError("Przełączenie interfejsu zgubiło kontekst tłumaczenia.")
+                if app.narrator_pace_var.get() != selected_pace:
+                    raise RuntimeError("Przełączenie interfejsu zgubiło tempo lektora.")
                 if store.load() != AppearanceSettings(
                     interface=CLASSIC_INTERFACE,
                     theme="oled",

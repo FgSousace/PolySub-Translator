@@ -11,8 +11,8 @@ DEFAULT_INTERFACE = MODERN_INTERFACE
 DEFAULT_THEME = "midnight"
 
 INTERFACE_LABELS = {
-    MODERN_INTERFACE: "Nowoczesny",
-    CLASSIC_INTERFACE: "Klasyczny 0.4.7",
+    MODERN_INTERFACE: "Nowoczesny — krok po kroku",
+    CLASSIC_INTERFACE: "Klasyczny — wszystkie ustawienia naraz",
 }
 INTERFACE_IDS_BY_LABEL = {label: key for key, label in INTERFACE_LABELS.items()}
 

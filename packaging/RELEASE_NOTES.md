@@ -1,25 +1,28 @@
-## PolySub Translator 0.6.0
+## PolySub Translator 0.6.1
 
-- polski lektor Chatterbox pokazuje teraz jawnie, czy synteza działa na GPU Radeon ROCm, czy na CPU;
-- aplikacja odczytuje z workera aktywne i żądane urządzenie, backend oraz dokładny powód fallbacku,
-  zamiast ignorować te informacje;
-- gdy poprawnie wybrany runtime ROCm spadnie na CPU podczas ładowania modelu albo przy dowolnej
-  kwestii, PolySub natychmiast przerywa render i pokazuje powód błędu GPU — nie kontynuuje już
-  po cichu wielogodzinnej syntezy na procesorze;
-- status każdej kwestii pokazuje teraz `GPU` albo `CPU`, a komunikat startowy na Radeonie zawiera
-  nazwę aktywnego urządzenia i wersję ROCm;
-- usunięto mylący komunikat o „wątkach CPU” podczas uruchamiania Chatterbox na Radeonie;
-- komputery bez zgodnego Radeona nadal mogą korzystać z normalnego trybu CPU; rygorystyczne
-  zatrzymanie po fallbacku dotyczy tylko sesji, które zostały uruchomione jako ROCm.
+- Whisper może teraz używać kart Radeon i Intel w Windows przez DirectML/DirectX 12; NVIDIA
+  zachowuje dotychczasowy, szybszy backend CUDA, a przy błędzie DirectML dostępny jest bezpieczny
+  powrót na CPU;
+- DirectML działa w prywatnym Pythonie i nie nadpisuje bibliotek CUDA ani AMD ROCm aplikacji;
+- worker Whispera używa zgodnego trybu FP32 i najpierw próbuje zachować dokładne znaczniki słów;
+- Chatterbox otrzymał oficjalną szybką ścieżkę V3, która nie kopiuje uwagi z GPU do CPU po każdym
+  tokenie;
+- narrator odczytuje całkowity i wolny VRAM; na RX 9070 XT 16 GB uruchamia dwa trwałe workery,
+  jeśli pamięć faktycznie na to pozwala, a na mniejszych kartach pozostaje przy jednym;
+- dodano cztery profile tempa lektora: Bardzo spokojny, Spokojny (domyślny), Naturalny oraz
+  Ścisłe dopasowanie; domyślny profil nie przekracza 1,08× i wykorzystuje przerwy między napisami;
+- nowoczesny interfejs został przebudowany na pięć prostych ekranów: plik, tłumaczenie,
+  czytelność, lektor i eksport; sprzęt oraz pozostałe opcje są w ustawieniach zaawansowanych;
+- dotychczasowy przewijany interfejs pozostaje dostępny jako wariant Klasyczny.
 
 ## Pobieranie
 
-- **Setup EXE:** pobierz `PolySub-Translator-Setup-0.6.0.exe` i uruchom instalator.
-- **ZIP z instalatorem:** pobierz `PolySub-Translator-Installer-0.6.0.zip`, rozpakuj i uruchom
+- **Setup EXE:** pobierz `PolySub-Translator-Setup-0.6.1.exe` i uruchom instalator.
+- **ZIP z instalatorem:** pobierz `PolySub-Translator-Installer-0.6.1.zip`, rozpakuj i uruchom
   znajdujący się w środku plik Setup.
 - **Sumy kontrolne:** `SHA256SUMS.txt` pozwala zweryfikować pobrany plik.
 
-Pobrane modele, ustawienia, napisy, środowisko AMD ROCm i punkty wznowienia z wersji 0.5.9
-pozostają zachowane. Ta wersja przede wszystkim ujawnia realny backend Chatterboxa i zatrzymuje
-pracę od razu, jeśli Radeon przestanie wykonywać syntezę, dzięki czemu błąd GPU można naprawić na
-podstawie konkretnego komunikatu zamiast czekać godzinami na ukryty fallback CPU.
+Pobrane modele, ustawienia, napisy, środowiska AMD ROCm i punkty wznowienia pozostają zachowane.
+Przy pierwszym użyciu nowego lektora PolySub jednorazowo zaktualizuje wyłącznie kod prywatnego
+środowiska Chatterbox; wielogigabajtowe wagi V3 nie będą pobierane ponownie. DirectML używa
+osobnego formatu modelu Whisper, więc jego wagę pobiera jednorazowo do prywatnego cache Windows.
