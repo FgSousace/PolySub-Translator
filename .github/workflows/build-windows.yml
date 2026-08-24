@@ -108,6 +108,10 @@ jobs:
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-amd-runtime"
 
+      - name: Test EXE — Whisper DirectML
+        shell: pwsh
+        run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-directml"
+
       - name: Test EXE — katalog modeli
         shell: pwsh
         run: .\scripts\run_windows_self_test.ps1 ".\dist\PolySubTranslator\PolySubTranslator.exe" "--self-test-model-catalog"
@@ -167,6 +171,7 @@ jobs:
             "--self-test-nvidia-runtime",
             "--self-test-branding",
             "--self-test-amd-runtime",
+            "--self-test-directml",
             "--self-test-narrator",
             "--self-test-model-cache",
             "--self-test-gui"

@@ -84,3 +84,6 @@ def test_worker_uses_microsoft_directml_attention_and_never_cpu_fallback() -> No
     assert "use_dml_attn=True" in _WORKER_SOURCE
     assert '"backend": "directml"' in _WORKER_SOURCE
     assert "model.to('cpu')" not in _WORKER_SOURCE
+    assert '(False, True, "FP32 + znaczniki słów")' in _WORKER_SOURCE
+    assert '(True, True, "FP16' not in _WORKER_SOURCE
+    assert '(True, False, "FP16' not in _WORKER_SOURCE

@@ -52,8 +52,13 @@ from .model_downloads import model_status
 from .model_manager_window import ModelManagerWindow
 from .models import TranslationMode
 from .narrator import (
+    DEFAULT_NARRATOR_PACE_ID,
+    NARRATOR_PACE_BY_ID,
+    NARRATOR_PACE_ID_BY_LABEL,
+    NARRATOR_PACE_PROFILES,
     ChatterboxNarrator,
     NarrationResult,
+    get_narrator_pace_profile,
     narrator_video_output_path,
 )
 from .narrator_models import CHATTERBOX_MULTILINGUAL_V3
@@ -569,9 +574,79 @@ class PolySubApp(tk.Tk):
         )
         self.about_button.grid(row=0, column=4, sticky="e", padx=(6, 0))
 
-        file_frame = ttk.LabelFrame(container, text="1. Napisy lub film", padding=14)
+        input_parent = container
+        translation_parent = container
+        timing_parent = container
+        narrator_parent = container
+        export_parent = container
+        advanced_parent = container
+        if modern:
+            self._wizard_order = ("start", "translation", "timing", "narrator", "export")
+            self._wizard_current_step = "start"
+            self._wizard_pages: dict[str, ttk.Frame] = {}
+            wizard_host = ttk.Frame(container, style="Content.TFrame")
+            wizard_host.pack(fill="both", expand=True)
+            wizard_host.columnconfigure(0, weight=1)
+            wizard_host.rowconfigure(0, weight=1)
+            for key in (*self._wizard_order, "advanced"):
+                page = ttk.Frame(wizard_host, style="Content.TFrame")
+                page.grid(row=0, column=0, sticky="nsew")
+                self._wizard_pages[key] = page
+            input_parent = self._wizard_pages["start"]
+            translation_parent = self._wizard_pages["translation"]
+            timing_parent = self._wizard_pages["timing"]
+            narrator_parent = self._wizard_pages["narrator"]
+            export_parent = self._wizard_pages["export"]
+            advanced_parent = self._wizard_pages["advanced"]
+            self._content_sections = dict(self._wizard_pages)
+            self._build_wizard_page_header(
+                input_parent,
+                "KROK 1 Z 5",
+                "Wybierz film albo napisy",
+                "Program sam znajdzie napisy w filmie, a gdy ich nie ma — uruchomi Whispera.",
+            )
+            self._build_wizard_page_header(
+                translation_parent,
+                "KROK 2 Z 5",
+                "Wybierz język i rozpocznij tłumaczenie",
+                "Zalecane ustawienia są już wybrane. Zmień tylko to, czego naprawdę potrzebujesz.",
+            )
+            self._build_wizard_page_header(
+                timing_parent,
+                "KROK 3 Z 5",
+                "Ustaw czytelność napisów",
+                "Wybierz gotowy profil. Początki wypowiedzi pozostaną zsynchronizowane.",
+            )
+            self._build_wizard_page_header(
+                narrator_parent,
+                "KROK 4 Z 5",
+                "Dobierz tempo polskiego lektora",
+                "Spokojne tempo jest domyślne; Radeon wykorzysta tyle równoległych "
+                "workerów, ile bezpiecznie mieści VRAM.",
+            )
+            self._build_wizard_page_header(
+                export_parent,
+                "KROK 5 Z 5",
+                "Wybierz gotowy film",
+                "Możesz dodać przełączane napisy, wypalić je na stałe albo utworzyć "
+                "film z lektorem.",
+            )
+            self._build_wizard_page_header(
+                advanced_parent,
+                "USTAWIENIA ZAAWANSOWANE",
+                "Sprzęt, wydajność i wygląd",
+                "Automatyczne ustawienia są zalecane. Tutaj możesz ręcznie wskazać "
+                "GPU, CPU i interfejs.",
+            )
+
+        file_frame = ttk.LabelFrame(
+            input_parent,
+            text="Film lub napisy" if modern else "1. Napisy lub film",
+            padding=18 if modern else 14,
+        )
         file_frame.pack(fill="x")
-        self._content_sections["start"] = file_frame
+        if not modern:
+            self._content_sections["start"] = file_frame
         file_frame.columnconfigure(0, weight=1)
         self.file_var = tk.StringVar(value="Nie wybrano pliku")
         ttk.Label(file_frame, textvariable=self.file_var, wraplength=650).grid(
@@ -604,9 +679,14 @@ class PolySubApp(tk.Tk):
         )
         self.speech_model_combo.grid(row=2, column=1, sticky="e", pady=(10, 0))
 
-        language_frame = ttk.LabelFrame(container, text="2. Języki", padding=14)
+        language_frame = ttk.LabelFrame(
+            translation_parent,
+            text="Języki" if modern else "2. Języki",
+            padding=14,
+        )
         language_frame.pack(fill="x", pady=12)
-        self._content_sections["translation"] = language_frame
+        if not modern:
+            self._content_sections["translation"] = language_frame
         language_frame.columnconfigure(1, weight=1)
         language_frame.columnconfigure(3, weight=1)
         ttk.Label(language_frame, text="Wykryty język:").grid(row=0, column=0, sticky="w")
@@ -636,14 +716,19 @@ class PolySubApp(tk.Tk):
             row=1, column=0, columnspan=4, sticky="w", pady=(8, 0)
         )
 
-        settings = ttk.Frame(container)
+        settings = ttk.Frame(translation_parent)
         settings.pack(fill="both", expand=True)
         settings.columnconfigure(0, weight=1)
         settings.columnconfigure(1, weight=1)
 
-        engine_frame = ttk.LabelFrame(settings, text="3. Silnik", padding=14)
+        engine_frame = ttk.LabelFrame(
+            settings,
+            text="Silnik tłumaczenia" if modern else "3. Silnik",
+            padding=14,
+        )
         engine_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        self._content_sections["models"] = engine_frame
+        if not modern:
+            self._content_sections["models"] = engine_frame
         self.engine_var = tk.StringVar(value=LOCAL_ENGINE_LABEL)
         self.engine_combo = ttk.Combobox(
             engine_frame,
@@ -694,7 +779,11 @@ class PolySubApp(tk.Tk):
         self.api_entry = ttk.Entry(engine_frame, textvariable=self.api_key_var, show="•")
         self.api_entry.pack(fill="x")
 
-        mode_frame = ttk.LabelFrame(settings, text="4. Tryb tłumaczenia", padding=14)
+        mode_frame = ttk.LabelFrame(
+            settings,
+            text="Sposób pracy" if modern else "4. Tryb tłumaczenia",
+            padding=14,
+        )
         mode_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         self.mode_var = tk.StringVar(value="")
         self.automatic_mode_checked = tk.BooleanVar(value=False)
@@ -727,12 +816,13 @@ class PolySubApp(tk.Tk):
         ).pack(anchor="w", pady=(10, 0))
 
         compute_frame = ttk.LabelFrame(
-            container,
-            text="5. Urządzenie obliczeniowe",
+            advanced_parent,
+            text="Karta graficzna" if modern else "5. Urządzenie obliczeniowe",
             padding=12,
         )
         compute_frame.pack(fill="x", pady=(12, 0))
-        self._content_sections["film"] = compute_frame
+        if not modern:
+            self._content_sections["film"] = compute_frame
         compute_frame.columnconfigure(0, weight=1)
         self.device_var = tk.StringVar(value="Automatycznie — wykrywanie sprzętu…")
         self.device_combo = ttk.Combobox(
@@ -775,8 +865,8 @@ class PolySubApp(tk.Tk):
         self.amd_runtime_status_label.grid(row=0, column=0, columnspan=2, sticky="w")
 
         cpu_frame = ttk.LabelFrame(
-            container,
-            text="6. Wykorzystanie procesora",
+            advanced_parent,
+            text="Wykorzystanie procesora" if modern else "6. Wykorzystanie procesora",
             padding=12,
         )
         cpu_frame.pack(fill="x", pady=(12, 0))
@@ -802,8 +892,8 @@ class PolySubApp(tk.Tk):
         self._update_cpu_usage_description()
 
         timing_frame = ttk.LabelFrame(
-            container,
-            text="7. Czas wyświetlania napisów",
+            timing_parent,
+            text="Tempo czytania napisów" if modern else "7. Czas wyświetlania napisów",
             padding=12,
         )
         timing_frame.pack(fill="x", pady=(12, 0))
@@ -948,7 +1038,11 @@ class PolySubApp(tk.Tk):
         self._update_timing_description()
 
         context_frame = ttk.LabelFrame(
-            container, text="8. Postacie i kontekst (opcjonalnie)", padding=12
+            timing_parent,
+            text="Postacie i kontekst (opcjonalnie)"
+            if modern
+            else "8. Postacie i kontekst (opcjonalnie)",
+            padding=12,
         )
         context_frame.pack(fill="both", expand=True, pady=12)
         ttk.Label(
@@ -961,18 +1055,24 @@ class PolySubApp(tk.Tk):
         self.context_text.pack(fill="both", expand=True, pady=(6, 0))
 
         if modern:
-            appearance_frame = self._build_appearance_panel(container)
+            self._build_narrator_pace_panel(narrator_parent)
+            self._build_export_panel(export_parent)
+            appearance_frame = self._build_appearance_panel(advanced_parent)
             appearance_frame.pack(fill="x", pady=(0, 12))
-            self._content_sections["settings"] = appearance_frame
+        else:
+            self._build_narrator_pace_panel(container)
 
         self._build_activity_panel()
         self._build_action_bar()
+        if modern:
+            self.automatic_mode_checked.set(True)
+            self._select_translation_mode(TranslationMode.AUTOMATIC)
         self._refresh_model_choices()
         self._refresh_whisper_choices()
         self._update_api_state()
         self._refresh_primary_action()
         if modern:
-            self.after_idle(lambda: self._set_modern_nav_selection("start"))
+            self.after_idle(lambda: self._show_wizard_step("start"))
 
     def _build_modern_sidebar(self) -> None:
         sidebar = ttk.Frame(
@@ -997,18 +1097,19 @@ class PolySubApp(tk.Tk):
         ).pack(anchor="w", pady=(2, 24))
 
         navigation = (
-            ("start", "⌂  Start"),
-            ("translation", "✦  Tłumaczenie"),
-            ("models", "◫  Modele AI"),
-            ("film", "▶  Film i sprzęt"),
-            ("settings", "⚙  Ustawienia"),
+            ("start", "1  Wybierz plik"),
+            ("translation", "2  Tłumaczenie"),
+            ("timing", "3  Czytelność"),
+            ("narrator", "4  Polski lektor"),
+            ("export", "5  Gotowy film"),
+            ("advanced", "⚙  Zaawansowane"),
         )
         for key, label in navigation:
             button = ttk.Button(
                 sidebar,
                 text=label,
                 style="Nav.TButton",
-                command=lambda section=key: self._scroll_to_section(section),
+                command=lambda section=key: self._show_wizard_step(section),
             )
             button.pack(fill="x", pady=2)
             self._modern_nav_buttons[key] = button
@@ -1032,6 +1133,215 @@ class PolySubApp(tk.Tk):
             "<<ComboboxSelected>>",
             lambda _event: self._theme_selection_changed(),
         )
+
+    @staticmethod
+    def _build_wizard_page_header(
+        parent: tk.Misc,
+        eyebrow: str,
+        title: str,
+        description: str,
+    ) -> None:
+        ttk.Label(parent, text=eyebrow, style="Eyebrow.TLabel").pack(anchor="w")
+        ttk.Label(parent, text=title, style="Title.TLabel").pack(anchor="w", pady=(2, 0))
+        ttk.Label(
+            parent,
+            text=description,
+            style="Muted.TLabel",
+            wraplength=820,
+        ).pack(anchor="w", pady=(3, 16))
+
+    def _build_narrator_pace_panel(self, parent: tk.Misc) -> None:
+        pace_frame = ttk.LabelFrame(parent, text="Tempo głosu", padding=18)
+        pace_frame.pack(fill="x")
+        pace_frame.columnconfigure(0, weight=1)
+        default_label = NARRATOR_PACE_BY_ID[DEFAULT_NARRATOR_PACE_ID].label
+        self.narrator_pace_var = tk.StringVar(value=default_label)
+        self.narrator_pace_combo = ttk.Combobox(
+            pace_frame,
+            textvariable=self.narrator_pace_var,
+            values=tuple(profile.label for profile in NARRATOR_PACE_PROFILES),
+            state="readonly",
+        )
+        self.narrator_pace_combo.grid(row=0, column=0, sticky="ew")
+        self.narrator_pace_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_narrator_pace_description(),
+        )
+        self.narrator_pace_description_var = tk.StringVar()
+        ttk.Label(
+            pace_frame,
+            textvariable=self.narrator_pace_description_var,
+            style="Muted.TLabel",
+            wraplength=820,
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self._update_narrator_pace_description()
+
+        acceleration = ttk.LabelFrame(parent, text="Przyspieszenie GPU", padding=18)
+        acceleration.pack(fill="x", pady=(12, 0))
+        ttk.Label(
+            acceleration,
+            text=(
+                "✓ Model pozostaje w VRAM przez cały film.\n"
+                "✓ PolySub odczytuje wolny VRAM i na kartach 12 GB+ uruchamia dwa "
+                "równoległe workery, gdy jest na to miejsce.\n"
+                "✓ Oficjalna szybka ścieżka V3 nie kopiuje już uwagi z GPU do CPU "
+                "po każdym tokenie."
+            ),
+            wraplength=820,
+            justify="left",
+        ).pack(anchor="w")
+        ttk.Button(
+            acceleration,
+            text="Pobierz lub sprawdź model Chatterbox…",
+            command=lambda: self._open_model_manager("narrator"),
+        ).pack(anchor="w", pady=(12, 0))
+
+    def _update_narrator_pace_description(self) -> None:
+        if not hasattr(self, "narrator_pace_description_var"):
+            return
+        profile = get_narrator_pace_profile(self.narrator_pace_var.get())
+        self.narrator_pace_description_var.set(
+            f"{profile.description} Program wykorzysta także wolną przerwę przed następną kwestią."
+        )
+
+    def _selected_narrator_pace_id(self) -> str:
+        if not hasattr(self, "narrator_pace_var"):
+            return DEFAULT_NARRATOR_PACE_ID
+        return NARRATOR_PACE_ID_BY_LABEL.get(
+            self.narrator_pace_var.get(),
+            DEFAULT_NARRATOR_PACE_ID,
+        )
+
+    def _build_export_panel(self, parent: tk.Misc) -> None:
+        choices = (
+            ("Napisy przełączane", "Najszybciej • bez ponownego kodowania obrazu i dźwięku"),
+            ("Napisy na stałe", "Najpewniejsze na telewizorze • obraz zostanie przeliczony"),
+            ("Polski lektor", "Spokojny głos Chatterbox • oryginał ściszony do 28%"),
+        )
+        for title, description in choices:
+            card = ttk.LabelFrame(parent, text=title, padding=16)
+            card.pack(fill="x", pady=(0, 10))
+            ttk.Label(card, text=description, style="Muted.TLabel", wraplength=800).pack(
+                anchor="w"
+            )
+        self.export_status_var = tk.StringVar(
+            value=(
+                "Najpierw zakończ tłumaczenie. Gdy wynik będzie gotowy, "
+                "przyciski poniżej się odblokują."
+            )
+        )
+        ttk.Label(
+            parent,
+            textvariable=self.export_status_var,
+            style="Heading.TLabel",
+            wraplength=820,
+        ).pack(anchor="w", pady=(8, 0))
+
+    def _show_wizard_step(self, step: str) -> None:
+        pages = getattr(self, "_wizard_pages", None)
+        if not pages or step not in pages:
+            self._scroll_to_section(step)
+            return
+        previous = getattr(self, "_wizard_current_step", "start")
+        if step == "advanced" and previous != "advanced":
+            self._wizard_return_step = previous
+        for key, page in pages.items():
+            if key == step:
+                page.grid()
+            else:
+                page.grid_remove()
+        pages[step].tkraise()
+        self._wizard_current_step = step
+        self.content_canvas.yview_moveto(0)
+        self._set_modern_nav_selection(step)
+        self._update_wizard_actions()
+
+    def _wizard_previous_step(self) -> None:
+        current = getattr(self, "_wizard_current_step", "start")
+        if current == "advanced":
+            self._show_wizard_step(getattr(self, "_wizard_return_step", "start"))
+            return
+        order = getattr(self, "_wizard_order", ())
+        if current in order:
+            index = order.index(current)
+            if index > 0:
+                self._show_wizard_step(order[index - 1])
+
+    def _wizard_next_step(self) -> None:
+        current = getattr(self, "_wizard_current_step", "start")
+        order = getattr(self, "_wizard_order", ())
+        if current not in order:
+            self._show_wizard_step("start")
+            return
+        if current == "start" and (self.document is None or self.source_path is None):
+            self._choose_file()
+            return
+        index = order.index(current)
+        if index < len(order) - 1:
+            self._show_wizard_step(order[index + 1])
+
+    def _update_wizard_actions(self) -> None:
+        if self.appearance.interface != MODERN_INTERFACE or not hasattr(
+            self, "wizard_next_button"
+        ):
+            return
+        step = getattr(self, "_wizard_current_step", "start")
+        for button in (
+            self.attach_button,
+            self.burn_button,
+            self.narrator_button,
+            self.start_button,
+            self.wizard_back_button,
+            self.wizard_next_button,
+            self.cancel_translation_button,
+        ):
+            button.grid_remove()
+
+        if step != "start":
+            self.wizard_back_button.grid()
+
+        if self._translation_running:
+            self.start_button.configure(text="Tłumaczenie w toku…", state="disabled")
+            self.start_button.grid()
+            self.cancel_translation_button.grid()
+            return
+
+        if step == "start":
+            self.start_button.configure(
+                text=(
+                    "Wyszukaj napisy w filmie lub wybierz plik"
+                    if self.document is None or self.source_path is None
+                    else "Dalej: ustaw tłumaczenie →"
+                ),
+                state="normal",
+            )
+            self.start_button.grid()
+            self.start_button.configure(style="Primary.TButton")
+        elif step == "translation":
+            self.wizard_next_button.configure(text="Dalej: czytelność →")
+            self.wizard_next_button.grid()
+        elif step == "timing":
+            self.start_button.configure(
+                text="Rozpocznij tłumaczenie",
+                state="normal" if self.document is not None else "disabled",
+                style="Primary.TButton",
+            )
+            self.start_button.grid()
+            if self.translated_subtitle_path is not None:
+                self.wizard_next_button.configure(text="Dalej: lektor →")
+                self.wizard_next_button.grid()
+        elif step == "narrator":
+            self.narrator_button.grid(row=1, column=1, sticky="ew", padx=6, pady=(8, 0))
+            self.wizard_next_button.configure(text="Pomiń / przejdź do eksportu →")
+            self.wizard_next_button.grid()
+        elif step == "export":
+            self.attach_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+            self.burn_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+            self.narrator_button.grid(row=0, column=2, sticky="ew", padx=(12, 0))
+        elif step == "advanced":
+            self.wizard_back_button.configure(text="← Wróć do kreatora")
+        if step != "advanced":
+            self.wizard_back_button.configure(text="← Wstecz")
 
     def _build_appearance_panel(self, parent: tk.Misc) -> ttk.LabelFrame:
         frame = ttk.LabelFrame(parent, text="9. Wygląd aplikacji", padding=14)
@@ -1290,6 +1600,7 @@ class PolySubApp(tk.Tk):
             "timing_var",
             "minimum_duration_var",
             "max_cps_var",
+            "narrator_pace_var",
             "version_status_var",
             "stage_text",
             "elapsed_text",
@@ -1344,6 +1655,7 @@ class PolySubApp(tk.Tk):
         self._sync_mode_checkboxes()
         self._update_cpu_usage_description()
         self._update_timing_description()
+        self._update_narrator_pace_description()
         self._refresh_model_choices(MODEL_LABEL_TO_ID.get(str(values.get("model_var", ""))))
         self._refresh_whisper_choices(
             WHISPER_LABEL_TO_ID.get(str(values.get("speech_model_var", "")))
@@ -1940,7 +2252,9 @@ class PolySubApp(tk.Tk):
             )
 
     def _build_action_bar(self) -> None:
+        modern = self.appearance.interface == MODERN_INTERFACE
         action_frame = ttk.Frame(self, padding=(24, 10, 24, 16))
+        self.action_frame = action_frame
         action_frame.grid(row=2, column=self._content_column, sticky="ew")
         action_frame.columnconfigure(0, weight=1)
         action_frame.columnconfigure(1, weight=1)
@@ -1972,14 +2286,48 @@ class PolySubApp(tk.Tk):
             command=self._primary_action,
             style="Primary.TButton",
         )
-        self.start_button.grid(
-            row=1,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            padx=(0, 6),
-            pady=(8, 0),
-        )
+        if modern:
+            self.wizard_back_button = ttk.Button(
+                action_frame,
+                text="← Wstecz",
+                command=self._wizard_previous_step,
+            )
+            self.wizard_back_button.grid(
+                row=1,
+                column=0,
+                sticky="ew",
+                padx=(0, 6),
+                pady=(8, 0),
+            )
+            self.start_button.grid(
+                row=1,
+                column=1,
+                sticky="ew",
+                padx=6,
+                pady=(8, 0),
+            )
+            self.wizard_next_button = ttk.Button(
+                action_frame,
+                text="Dalej →",
+                command=self._wizard_next_step,
+                style="Primary.TButton",
+            )
+            self.wizard_next_button.grid(
+                row=1,
+                column=2,
+                sticky="ew",
+                padx=(6, 0),
+                pady=(8, 0),
+            )
+        else:
+            self.start_button.grid(
+                row=1,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                padx=(0, 6),
+                pady=(8, 0),
+            )
         self.cancel_translation_button = ttk.Button(
             action_frame,
             text="Anuluj tłumaczenie",
@@ -2199,6 +2547,14 @@ class PolySubApp(tk.Tk):
         if self.document is None or self.source_path is None:
             self._choose_file()
             return
+        if self.appearance.interface == MODERN_INTERFACE:
+            step = getattr(self, "_wizard_current_step", "start")
+            if step == "start":
+                self._show_wizard_step("translation")
+                return
+            if step not in {"timing", "translation"}:
+                self._show_wizard_step("timing")
+                return
         self._start_translation()
 
     def _refresh_primary_action(self) -> None:
@@ -2212,7 +2568,14 @@ class PolySubApp(tk.Tk):
                 state="normal",
             )
         else:
-            self.start_button.configure(text="Rozpocznij tłumaczenie", state="normal")
+            text = "Rozpocznij tłumaczenie"
+            if (
+                self.appearance.interface == MODERN_INTERFACE
+                and getattr(self, "_wizard_current_step", "start") == "start"
+            ):
+                text = "Dalej: ustaw tłumaczenie →"
+            self.start_button.configure(text=text, state="normal")
+        self._update_wizard_actions()
 
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -2855,6 +3218,13 @@ class PolySubApp(tk.Tk):
         self.translated_subtitle_path = subtitle_path
         self.translated_target_language = target_language
         self._update_attach_button()
+        if self.appearance.interface == MODERN_INTERFACE:
+            next_step = (
+                "narrator"
+                if self.media_path is not None and target_language == "pl"
+                else "export"
+            )
+            self.after_idle(lambda: self._show_wizard_step(next_step))
 
     def _update_attach_button(self) -> None:
         ready = (
@@ -2867,6 +3237,21 @@ class PolySubApp(tk.Tk):
         self.burn_button.configure(state="normal" if ready else "disabled")
         narrator_ready = ready and self.translated_target_language == "pl"
         self.narrator_button.configure(state="normal" if narrator_ready else "disabled")
+        if hasattr(self, "export_status_var"):
+            if ready:
+                self.export_status_var.set(
+                    "✓ Tłumaczenie jest gotowe. Wybierz jeden z trzech sposobów utworzenia filmu."
+                )
+            elif self.media_path is None:
+                self.export_status_var.set(
+                    "Eksport filmu wymaga pliku wideo. Dla wejściowego SRT gotowy "
+                    "jest sam plik napisów."
+                )
+            else:
+                self.export_status_var.set(
+                    "Najpierw zakończ tłumaczenie. Przyciski eksportu odblokują się automatycznie."
+                )
+        self._update_wizard_actions()
 
     def _create_narrator(self) -> None:
         if (
@@ -2902,12 +3287,17 @@ class PolySubApp(tk.Tk):
         )
         if not selected:
             return
+        pace_id = self._selected_narrator_pace_id()
+        pace = get_narrator_pace_profile(pace_id)
         if not messagebox.askyesno(
             "Utworzyć polskiego lektora?",
             "Chatterbox przeczyta wszystkie polskie kwestie jednym głosem, a oryginalny "
             "dźwięk zostanie ściszony do 28%. Obraz nie będzie ponownie kodowany.\n\n"
+            f"Tempo: {pace.label}.\n"
+            "Program wykorzysta przerwy między napisami i nie przekroczy "
+            f"{pace.max_fit_speed:.2f}×.\n\n"
             "Przy pierwszym użyciu Windows przygotuje dodatkowe, odizolowane środowisko "
-            "Chatterbox. Synteza działa bezpiecznie na CPU i może potrwać dłużej niż film.",
+            "Chatterbox. Na zgodnym Radeonie model i równoległe workery pozostaną w VRAM.",
             parent=self,
         ):
             return
@@ -2934,6 +3324,7 @@ class PolySubApp(tk.Tk):
                 Path(selected),
                 chatterbox_status.snapshot_path,
                 self._selected_cpu_usage_limit(),
+                pace_id,
             ),
             daemon=True,
         )
@@ -2944,6 +3335,7 @@ class PolySubApp(tk.Tk):
         output_path: Path,
         model_path: Path,
         cpu_usage_limit: int,
+        pace_profile: str,
     ) -> None:
         try:
             if self.media_path is None or self.translated_subtitle_path is None:
@@ -2955,6 +3347,7 @@ class PolySubApp(tk.Tk):
                 output_path=output_path,
                 original_volume=0.28,
                 cpu_usage_limit=cpu_usage_limit,
+                pace_profile=pace_profile,
                 status=lambda message: self.after(0, self._narrator_status, message),
                 progress=lambda done, total: self.after(
                     0, self._set_narrator_progress, done, total
@@ -2995,7 +3388,9 @@ class PolySubApp(tk.Tk):
         messagebox.showinfo(
             "Film z lektorem gotowy",
             "Utworzono jeden polski głos Chatterbox i zmiksowano go ze ściszonym "
-            f"oryginałem ({result.original_volume:.0%}).\n\n{result.output_path}",
+            f"oryginałem ({result.original_volume:.0%}).\n"
+            f"Tempo: {NARRATOR_PACE_BY_ID[result.pace_profile].label}.\n"
+            f"Równoległe workery: {result.worker_count}.\n\n{result.output_path}",
             parent=self,
         )
 

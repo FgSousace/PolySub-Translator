@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,9 +29,17 @@ from .amd_runtime import (
 from .compute_devices import detect_hardware_snapshot
 
 CHATTERBOX_VERSION = "0.1.7"
+CHATTERBOX_V3_SOURCE_COMMIT = "3f35dfc8fbe63e5b29793289dc68f1875bb317a5"
+CHATTERBOX_V3_SOURCE_SHA256 = (
+    "f26a44868ae90e29fc0759851c33026f01cc6c69e77baa598a3960e1bcf3599f"
+)
+CHATTERBOX_V3_SOURCE_ARCHIVE = (
+    "https://github.com/resemble-ai/chatterbox/archive/"
+    f"{CHATTERBOX_V3_SOURCE_COMMIT}.zip"
+)
 # AMD's official ROCm 7.14 Windows matrix pairs PyTorch 2.12.0 with torchaudio 2.11.0.
 AMD_TORCHAUDIO_VERSION = "2.11.0"
-NARRATOR_RUNTIME_SCHEMA = 3
+NARRATOR_RUNTIME_SCHEMA = 4
 StatusCallback = Callable[[str], None]
 
 
@@ -153,7 +164,7 @@ def install_narrator_runtime(status: StatusCallback | None = None) -> Path:
             )
             status(
                 f"Chatterbox jest gotowy na GPU: {_ACTIVE_RUNTIME.label}. "
-                "W razie błędu konkretnej operacji worker automatycznie przełączy się na CPU."
+                "Jeśli worker straci GPU, render zostanie przerwany z dokładnym powodem."
             )
             return python_path
         except Exception as exc:
@@ -285,6 +296,7 @@ def _install_cpu_narrator_stack(
     )
     _install_common_chatterbox_dependencies(python_path, status)
     _install_chatterbox_wheel(python_path, status)
+    _install_chatterbox_v3_source(python_path, status)
 
 
 def _install_amd_narrator_stack(
@@ -314,6 +326,7 @@ def _install_amd_narrator_stack(
     )
     _install_common_chatterbox_dependencies(python_path, status)
     _install_chatterbox_wheel(python_path, status)
+    _install_chatterbox_v3_source(python_path, status)
 
 
 def _install_common_chatterbox_dependencies(
@@ -377,6 +390,129 @@ def _install_chatterbox_wheel(
     )
 
 
+def _install_chatterbox_v3_source(
+    python_path: Path,
+    status: StatusCallback,
+) -> None:
+    """Overlay the official V3 implementation onto the published 0.1.7 wheel.
+
+    The 0.1.7 wheel predates the V3 fast path and copies attention tensors back
+    to CPU after every generated token. The pinned upstream V3 commit removes
+    that analyzer and is verified before it is placed in the private runtime.
+    """
+
+    runtime_dir = python_path.parent
+    downloads = runtime_dir.parent / "narrator-runtime-downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    archive_path = downloads / f"chatterbox-{CHATTERBOX_V3_SOURCE_COMMIT}.zip"
+
+    if not archive_path.is_file() or _sha256(archive_path) != CHATTERBOX_V3_SOURCE_SHA256:
+        archive_path.unlink(missing_ok=True)
+        temporary = archive_path.with_suffix(".zip.part")
+        temporary.unlink(missing_ok=True)
+        status("Pobieranie oficjalnego, szybszego kodu Chatterbox V3…")
+        try:
+            import requests
+
+            with requests.get(
+                CHATTERBOX_V3_SOURCE_ARCHIVE,
+                stream=True,
+                timeout=(20, 240),
+            ) as response:
+                response.raise_for_status()
+                with temporary.open("wb") as output:
+                    for block in response.iter_content(chunk_size=1024 * 1024):
+                        if block:
+                            output.write(block)
+            if _sha256(temporary) != CHATTERBOX_V3_SOURCE_SHA256:
+                raise NarratorRuntimeError(
+                    "Pobrany kod Chatterbox V3 ma nieprawidłową sumę SHA-256."
+                )
+            temporary.replace(archive_path)
+        except Exception as exc:
+            temporary.unlink(missing_ok=True)
+            if isinstance(exc, NarratorRuntimeError):
+                raise
+            raise NarratorRuntimeError(
+                f"Nie udało się pobrać oficjalnego kodu Chatterbox V3: {exc}"
+            ) from exc
+
+    site_packages = runtime_dir / "Lib" / "site-packages"
+    target = site_packages / "chatterbox"
+    staging = site_packages / ".polysub-chatterbox-v3-staging"
+    backup = site_packages / ".polysub-chatterbox-backup"
+    shutil.rmtree(staging, ignore_errors=True)
+    shutil.rmtree(backup, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    marker = "/src/chatterbox/"
+
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            extracted = 0
+            license_member = None
+            for member in archive.infolist():
+                normalized = member.filename.replace("\\", "/")
+                if normalized.endswith("/LICENSE") and "/src/chatterbox/" not in normalized:
+                    license_member = license_member or member
+                if marker not in normalized or member.is_dir():
+                    continue
+                relative = Path(normalized.split(marker, 1)[1])
+                if not relative.parts or ".." in relative.parts:
+                    continue
+                destination = staging / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as source, destination.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                extracted += 1
+            if license_member is not None:
+                with archive.open(license_member) as source:
+                    (runtime_dir / "CHATTERBOX_LICENSE.txt").write_bytes(source.read())
+
+        t3_source = staging / "models" / "t3" / "t3.py"
+        mtl_source = staging / "mtl_tts.py"
+        if (
+            extracted < 20
+            or not (staging / "__init__.py").is_file()
+            or not mtl_source.is_file()
+            or not t3_source.is_file()
+        ):
+            raise NarratorRuntimeError(
+                "Archiwum Chatterbox nie zawiera kompletnego kodu V3."
+            )
+        if "output_attentions=False" not in t3_source.read_text(encoding="utf-8"):
+            raise NarratorRuntimeError(
+                "Kod Chatterbox nie zawiera szybkiej ścieżki V3 bez analizatora uwagi."
+            )
+        if "t3_model" not in mtl_source.read_text(encoding="utf-8"):
+            raise NarratorRuntimeError("Kod Chatterbox nie obsługuje oficjalnego modelu V3.")
+
+        if target.exists():
+            target.replace(backup)
+        try:
+            staging.replace(target)
+        except Exception:
+            if backup.exists() and not target.exists():
+                backup.replace(target)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
+        status("Szybka ścieżka Chatterbox V3 jest gotowa.")
+    except (OSError, zipfile.BadZipFile) as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        if backup.exists() and not target.exists():
+            backup.replace(target)
+        raise NarratorRuntimeError(
+            f"Nie udało się przygotować szybkiego kodu Chatterbox V3: {exc}"
+        ) from exc
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _write_manifest(
     python_path: Path,
     *,
@@ -389,6 +525,7 @@ def _write_manifest(
             {
                 "schema": NARRATOR_RUNTIME_SCHEMA,
                 "chatterbox_version": CHATTERBOX_VERSION,
+                "source_commit": CHATTERBOX_V3_SOURCE_COMMIT,
                 "backend": backend,
                 "device": device,
                 "device_index": device_index,
@@ -415,6 +552,7 @@ def _manifest_matches(
     if not (
         payload.get("schema") == NARRATOR_RUNTIME_SCHEMA
         and payload.get("chatterbox_version") == CHATTERBOX_VERSION
+        and payload.get("source_commit") == CHATTERBOX_V3_SOURCE_COMMIT
         and payload.get("backend") == backend
     ):
         return False
@@ -438,7 +576,14 @@ def _runtime_ready(
     if backend == "rocm":
         environment = amd_worker_environment(device_index)
         code = (
-            "import chatterbox,torch,torchaudio;"
+            "import chatterbox,inspect,torch,torchaudio;"
+            "from chatterbox.mtl_tts import ChatterboxMultilingualTTS;"
+            "from chatterbox.models.t3.t3 import T3;"
+            "parameters=inspect.signature(ChatterboxMultilingualTTS.from_local).parameters;"
+            "assert 't3_model' in parameters;"
+            "source=inspect.getsource(T3.inference);"
+            "assert 'output_attentions=False' in source;"
+            "assert 'AlignmentStreamAnalyzer' not in source;"
             "assert torch.version.hip;"
             "assert torch.cuda.is_available();"
             "assert torchaudio.__version__.startswith('2.11.0');"
@@ -451,8 +596,15 @@ def _runtime_ready(
         environment["CUDA_VISIBLE_DEVICES"] = ""
         environment.pop("HIP_VISIBLE_DEVICES", None)
         code = (
-            "import chatterbox,torch,torchaudio;"
-            "assert torch.__version__.startswith('2.6')"
+            "import chatterbox,inspect,torch,torchaudio;"
+            "from chatterbox.mtl_tts import ChatterboxMultilingualTTS;"
+            "from chatterbox.models.t3.t3 import T3;"
+            "assert torch.__version__.startswith('2.6');"
+            "parameters=inspect.signature(ChatterboxMultilingualTTS.from_local).parameters;"
+            "assert 't3_model' in parameters;"
+            "source=inspect.getsource(T3.inference);"
+            "assert 'output_attentions=False' in source;"
+            "assert 'AlignmentStreamAnalyzer' not in source"
         )
     environment["PYTHONUTF8"] = "1"
     environment["PYTHONIOENCODING"] = "utf-8"

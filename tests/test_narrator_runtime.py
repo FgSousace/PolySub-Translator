@@ -1,4 +1,6 @@
+import hashlib
 import json
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -79,6 +81,11 @@ def test_windows_narrator_runtime_installs_official_cpu_stack(
         "_run_install_command",
         lambda command, _status, _message: commands.append(command),
     )
+    monkeypatch.setattr(
+        narrator_runtime,
+        "_install_chatterbox_v3_source",
+        lambda _python, _status: None,
+    )
 
     installed = narrator_runtime.install_narrator_runtime()
 
@@ -100,6 +107,7 @@ def test_windows_narrator_runtime_installs_official_cpu_stack(
     assert manifest == {
         "schema": narrator_runtime.NARRATOR_RUNTIME_SCHEMA,
         "chatterbox_version": "0.1.7",
+        "source_commit": narrator_runtime.CHATTERBOX_V3_SOURCE_COMMIT,
         "backend": "cpu",
         "device": "cpu",
         "device_index": None,
@@ -146,6 +154,11 @@ def test_windows_narrator_runtime_prefers_rx_9070_xt_rocm(
         "_run_install_command",
         lambda command, _status, _message: commands.append(command),
     )
+    monkeypatch.setattr(
+        narrator_runtime,
+        "_install_chatterbox_v3_source",
+        lambda _python, _status: None,
+    )
 
     installed = narrator_runtime.install_narrator_runtime()
 
@@ -178,3 +191,53 @@ def test_windows_narrator_runtime_prefers_rx_9070_xt_rocm(
     assert manifest["device_index"] == 1
     assert manifest["rocm_version"] == narrator_runtime.ROCM_VERSION
     assert manifest["torchaudio_version"] == "2.11.0"
+    assert manifest["source_commit"] == narrator_runtime.CHATTERBOX_V3_SOURCE_COMMIT
+
+
+def test_narrator_runtime_pins_verified_fast_v3_source() -> None:
+    assert len(narrator_runtime.CHATTERBOX_V3_SOURCE_COMMIT) == 40
+    assert len(narrator_runtime.CHATTERBOX_V3_SOURCE_SHA256) == 64
+    assert "github.com/resemble-ai/chatterbox/archive/" in (
+        narrator_runtime.CHATTERBOX_V3_SOURCE_ARCHIVE
+    )
+    assert narrator_runtime.NARRATOR_RUNTIME_SCHEMA >= 4
+
+
+def test_fast_v3_source_replaces_old_private_runtime_code(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_dir = tmp_path / "runtime"
+    python_path = runtime_dir / "python.exe"
+    target = runtime_dir / "Lib" / "site-packages" / "chatterbox"
+    target.mkdir(parents=True)
+    (target / "old.py").write_text("old", encoding="utf-8")
+    downloads = tmp_path / "narrator-runtime-downloads"
+    downloads.mkdir()
+    archive = downloads / (
+        f"chatterbox-{narrator_runtime.CHATTERBOX_V3_SOURCE_COMMIT}.zip"
+    )
+    root = "chatterbox-source"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr(f"{root}/LICENSE", "official license")
+        output.writestr(f"{root}/src/chatterbox/__init__.py", "")
+        output.writestr(f"{root}/src/chatterbox/mtl_tts.py", "t3_model = 'v3'")
+        output.writestr(
+            f"{root}/src/chatterbox/models/t3/t3.py",
+            "def inference():\n    output_attentions=False\n",
+        )
+        for index in range(20):
+            output.writestr(f"{root}/src/chatterbox/module_{index}.py", "")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    monkeypatch.setattr(narrator_runtime, "CHATTERBOX_V3_SOURCE_SHA256", digest)
+
+    narrator_runtime._install_chatterbox_v3_source(python_path, lambda _message: None)
+
+    assert not (target / "old.py").exists()
+    assert (target / "mtl_tts.py").is_file()
+    assert "output_attentions=False" in (
+        target / "models" / "t3" / "t3.py"
+    ).read_text(encoding="utf-8")
+    assert (runtime_dir / "CHATTERBOX_LICENSE.txt").read_text(encoding="utf-8") == (
+        "official license"
+    )

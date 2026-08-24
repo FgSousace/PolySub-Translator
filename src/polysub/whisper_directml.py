@@ -668,8 +668,9 @@ def _serialize(result: dict) -> list[dict]:
 
 def _transcribe(model, audio: np.ndarray):
     attempts = (
-        (True, True, "FP16 + znaczniki słów"),
-        (True, False, "FP16 + znaczniki segmentów"),
+        # DirectML's attention kernel currently requires FP32. Trying FP16 first
+        # only wastes time and can fail after the model has already been loaded.
+        (False, True, "FP32 + znaczniki słów"),
         (False, False, "FP32 + znaczniki segmentów"),
     )
     failures = []

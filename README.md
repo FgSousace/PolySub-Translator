@@ -16,8 +16,8 @@ kwestii, początki wypowiedzi i podstawowe formatowanie. Użytkownik wybiera sil
 oraz jeden z dwóch trybów: szybkie tłumaczenie automatyczne lub tłumaczenie z ręczną weryfikacją
 niejasnych fragmentów.
 
-> Status: `v0.5.6` — naprawione zależności lokalnych modeli i automatyczna naprawa AMD
-> Chatterbox V3 na Windows; pobrane wcześniej wagi nie wymagają ponownego pobierania.
+> Status: `v0.6.1` — Whisper DirectML dla Radeonów, szybszy Chatterbox w VRAM,
+> wybór tempa lektora i nowoczesny kreator krok po kroku.
 
 ## Najważniejsze funkcje
 
@@ -25,8 +25,10 @@ niejasnych fragmentów.
 - dodatkowy import MP4/MKV/MOV/M4V/AVI/WebM bez usuwania obsługi SRT;
 - wyciąganie pierwszej tekstowej ścieżki napisów z filmu;
 - lokalne rozpoznawanie mowy przez Whisper, gdy film nie zawiera napisów;
+- Whisper na Radeonach i Intel GPU przez Windows DirectML/DirectX 12;
 - sześć zarządzanych wariantów Whisper od Tiny do Large v3;
 - jeden polski głos lektora Chatterbox V3 zmiksowany ze ściszonym oryginałem;
+- cztery profile tempa lektora oraz równoległe workery dobierane do wolnego VRAM-u;
 - szybkie dołączanie gotowych napisów do filmu bez ponownego kodowania obrazu i dźwięku;
 - wypalanie napisów na stałe w obrazie filmu z automatyczną akceleracją NVIDIA, Intel lub AMD;
 - wybór dowolnego języka docelowego obsługiwanego przez wybrany silnik;
@@ -40,7 +42,7 @@ niejasnych fragmentów.
 - wybór limitu 25%, 50%, 75% albo 100% logicznych wątków procesora;
 - dwa paski postępu: wszystkie etapy operacji oraz dokładny postęp bieżącego etapu;
 - dziennik wykonywanych czynności, czas pracy, procenty, liczba słów i czas nagrania;
-- przewijany interfejs z przyciskami stale widocznymi na dole również na mniejszych ekranach;
+- nowoczesny kreator prowadzący przez pięć osobnych etapów oraz zachowany układ klasyczny;
 - automatyczne sprawdzanie najnowszej wersji oraz ręczny przycisk pobrania aktualizacji;
 - wybór nowoczesnego albo klasycznego interfejsu oraz 10 zapamiętywanych motywów;
 - pięć profili czasu napisów: Zalecane, Krótsze, Dłuższe, Oryginalne i Własne;
@@ -67,9 +69,9 @@ niejasnych fragmentów.
 W sekcji **Ustawienia → Wygląd aplikacji** można przełączać się między dwoma układami bez
 utraty wybranego pliku, języków, modelu ani wpisanego kontekstu:
 
-- **Nowoczesny** — domyślny układ z nieruchomym panelem bocznym, skrótami do pięciu sekcji,
-  kartami ustawień i stale widocznym paskiem postępu;
-- **Klasyczny 0.4.7** — zachowany przewijany układ poprzedniego wydania.
+- **Nowoczesny — krok po kroku** — domyślny kreator: plik, tłumaczenie, czytelność,
+  lektor i gotowy film; ustawienia sprzętu są schowane w sekcji Zaawansowane;
+- **Klasyczny — wszystkie ustawienia naraz** — zachowany przewijany układ poprzednich wydań.
 
 Motyw zmienia się natychmiast, a wybrany interfejs i kolory są zapisywane dla następnych
 uruchomień. Dostępne motywy to: Automatyczny — system, OLED Black, Midnight Blue, Graphite Pro,
@@ -151,12 +153,13 @@ prawdziwą nazwę procesora i wszystkich kart graficznych obecnych w komputerze.
 - konkretny procesor.
 
 Program osobno sprawdza możliwość użycia urządzenia do lokalnego modelu i do rozpoznawania mowy. Obsługuje
-backendy udostępnione przez zainstalowane środowisko, między innymi CUDA, ROCm i Intel XPU. Jeśli
+backendy udostępnione przez zainstalowane środowisko, między innymi CUDA, ROCm, DirectML i Intel
+XPU. Jeśli
 wybrane GPU albo sterownik nie obsługuje danej operacji, PolySub informuje o tym i proponuje lub
 automatycznie wykonuje zadanie na CPU. Awaria GPU podczas ładowania albo obliczeń również nie
 powoduje utraty całego zadania — program ponawia operację na procesorze.
 
-Instalator v0.5.6 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
+Instalator v0.6.1 zawiera PyTorch 2.11 z CUDA 12.8 i cuDNN 9 dla kart NVIDIA GTX 10 oraz
 RTX 20/30/40/50, w tym RTX 2080, z aktualnym sterownikiem. Radeon wymaga innego wariantu
 PyTorch. PolySub po wykryciu zgodnej karty sam dobiera jej architekturę, w tle pobiera własne
 odizolowane środowisko Python oraz oficjalny PyTorch ROCm 7.14, a następnie wykonuje prawdziwe
@@ -174,6 +177,12 @@ i Radeonów w procesorach Ryzen. Karta bez oficjalnego pakietu lub z niezgodnym 
 pozostaje jawnie na CPU. AMD wymaga obecnie Windows 11 25H2 i zgodnego sterownika Adrenalin;
 program nie modyfikuje sterownika systemowego. Przy wypalaniu filmu aplikacja może niezależnie
 użyć AMD AMF lub Intel Quick Sync, jeśli udostępnia je FFmpeg.
+
+Whisper zachowuje CUDA na kartach NVIDIA. Dla Radeona i innych kart DirectX 12 PolySub oferuje
+osobny backend DirectML w prywatnym Pythonie, dlatego nie nadpisuje środowiska CUDA ani ROCm.
+Pierwsze uruchomienie DirectML pobiera natywny wariant modelu Whisper do osobnego cache; kolejne
+transkrypcje używają już lokalnej kopii. Gdy DirectML nie przejdzie testu, aplikacja pokazuje powód
+i może bezpiecznie wrócić na CPU.
 
 Sekcja **Wykorzystanie procesora** mapuje wybrany procent na prawdziwą liczbę logicznych wątków.
 Ustawienie 100% przekazuje wszystkie dostępne wątki do PyTorch, Whispera i kodera CPU oraz zwiększa
@@ -218,10 +227,16 @@ Obraz jest kopiowany bez ponownego kodowania do osobnego pliku `film.pl.narrator
 
 Model ma około 3,25 GB i jest pobierany w zakładce **Lektor**. PolySub pobiera tylko
 sześć plików potrzebnych wersji V3, nie całe repozytorium z historycznymi wagami.
-Przy pierwszym użyciu Windows przygotowuje prywatne środowisko Chatterbox/PyTorch 2.6,
-odizolowane od CUDA i ROCm aplikacji. Synteza działa obecnie na CPU i respektuje wybrany
-limit wykorzystania procesora. Wygenerowane audio
-zawiera znak wodny Perth dodawany przez Chatterbox.
+Przy pierwszym użyciu Windows przygotowuje prywatne środowisko Chatterbox, odizolowane od
+pozostałych backendów. Na zgodnym Radeonie używa ROCm, utrzymuje cały model w VRAM i odczytuje
+wolną pamięć po jego wczytaniu. Karta 16 GB może uruchomić dwa trwałe workery równolegle, jeżeli
+rzeczywiście ma dość wolnego VRAM-u; mniejsza karta pozostaje przy jednym. Oficjalna szybka
+ścieżka V3 nie kopiuje już uwagi do CPU po każdym tokenie.
+
+Do wyboru są profile **Bardzo spokojny**, **Spokojny (zalecany)**, **Naturalny** i **Ścisłe
+dopasowanie**. Domyślny głos ma około 0,90×, wykorzystuje wolną przerwę przed następną kwestią
+i nie jest przyspieszany powyżej 1,08×. Wygenerowane audio zawiera znak wodny Perth dodawany
+przez Chatterbox.
 
 ### Szybkie dołączanie napisów do filmu
 
@@ -256,9 +271,9 @@ zakładki **Releases** — bez szukania workflow i rozpakowywania dodatkowego ar
 
 1. Otwórz [najnowszą wersję PolySub Translator](https://github.com/FgSousace/PolySub-Translator/releases/latest).
 2. W sekcji **Assets** wybierz jeden z dwóch wariantów:
-   - `PolySub-Translator-Setup-0.5.6.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
-   - `PolySub-Translator-Installer-0.5.6.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
-3. Uruchom `PolySub-Translator-Setup-0.5.6.exe` i wybierz katalog instalacji.
+   - `PolySub-Translator-Setup-0.6.1.exe` — uruchamiasz bezpośrednio, bez rozpakowywania;
+   - `PolySub-Translator-Installer-0.6.1.zip` — po rozpakowaniu zawiera instalator i `README.txt`.
+3. Uruchom `PolySub-Translator-Setup-0.6.1.exe` i wybierz katalog instalacji.
 4. Zostaw zaznaczoną opcję utworzenia ikony na pulpicie i kliknij **Instaluj**.
 5. Po instalacji kreator pokaże krótką instrukcję, opcję uruchomienia programu oraz opcjonalne
    pole **Wybierz i pobierz modele AI**.
@@ -293,7 +308,7 @@ dotyczy wyłącznie uruchamiania programu z kodu źródłowego.
 
 ### Wersja przenośna
 
-Ze względu na dołączenie bibliotek CUDA wydania 0.4.6–0.5.6 nie zawierają nowej paczki portable, która
+Ze względu na dołączenie bibliotek CUDA wydania od 0.4.6 nie zawierają nowej paczki portable, która
 przekraczałaby limit pojedynczego pliku GitHub Releases. Wersja przenośna 0.4.5 nadal pozostaje
 dostępna w historii wydań. Nowe wersje są publikowane jako `Setup.exe` i ZIP z instalatorem.
 
@@ -342,18 +357,14 @@ funkcji filmu, wystarczy podstawowe `pip install -e .`.
 polysub-gui
 ```
 
-1. Kliknij **Wyszukaj napisy w filmie lub wybierz plik** i wskaż SRT albo film.
-2. Dla filmu bez napisów pobierz i wybierz jeden z sześciu wariantów Whisper.
-3. Sprawdź automatycznie wykryty język i wybierz język docelowy.
-4. Wybierz lokalny AI albo DeepL API; przyciskiem **Pobierz / usuń…** zarządzaj
-   tłumaczeniami, Whisperem i Chatterbox.
-5. Zaznacz wymagany checkbox **Tłumacz automatycznie** albo **Tłumacz z weryfikacją**.
-6. Zostaw **Automatycznie** albo wybierz wykryty procesor lub kartę graficzną.
-7. Wybierz limit wykorzystania procesora; domyślne 100% daje maksymalną wydajność.
-8. Wybierz czas napisów; domyślne **Automatyczna czytelność — zalecane** nie dopuszcza nakładania.
-9. Opcjonalnie wpisz informacje, np. `Anna — kobieta; Marek — mężczyzna`.
-10. Rozpocznij tłumaczenie; w razie potrzeby użyj **Anuluj tłumaczenie**, aby zachować postęp.
-11. Dla filmu dodaj przełączane napisy, wypal je na obrazie albo utwórz polskiego lektora.
+1. **Wybierz plik:** wskaż SRT albo film; dla filmu bez napisów wybierz model Whisper.
+2. **Tłumaczenie:** sprawdź języki, wybierz lokalny AI albo DeepL i sposób pracy.
+3. **Czytelność:** wybierz czas napisów, opcjonalny kontekst i rozpocznij tłumaczenie.
+4. **Polski lektor:** wybierz spokojne, naturalne albo ścisłe tempo głosu.
+5. **Gotowy film:** dodaj przełączane napisy, wypal je albo utwórz film z lektorem.
+
+Sprzęt, limit CPU, modele i wygląd są dostępne w **Zaawansowanych**. Jeżeli wolisz wszystkie
+ustawienia na jednym przewijanym ekranie, wybierz interfejs **Klasyczny** w oknie Wygląd.
 
 Wynik tłumaczenia otrzyma nazwę w rodzaju `film.pl.srt`. W trybie weryfikacji zostanie najpierw
 otwarty edytor. Przycisk dołączania uaktywnia się dopiero po zapisaniu gotowych napisów.
@@ -390,8 +401,8 @@ polysub film.mp4 --target pl --engine local --attach-to-video
 # Film z polskimi napisami wypalonymi na stałe i pełnym limitem CPU
 polysub film.mp4 --target pl --engine local --burn-into-video --cpu-limit 100
 
-# Jeden polski głos Chatterbox na tle ściszonego oryginału
-polysub film.mp4 --target pl --engine local --polish-narrator
+# Jeden spokojny polski głos Chatterbox na tle ściszonego oryginału
+polysub film.mp4 --target pl --engine local --polish-narrator --narrator-pace comfortable
 ```
 
 Uruchomienie `polysub` bez parametrów otwiera GUI.
@@ -434,7 +445,7 @@ pytest
 
 GitHub Actions uruchamia lint i testy na Pythonie 3.10 oraz 3.12. Workflow Windows buduje
 `Setup.exe`, instaluje go w czystym katalogu, sprawdza trzy katalogi modeli, workera lektora,
-profile czasu, sposoby dodawania napisów, ustawienia CPU, biblioteki CUDA/cuDNN i GUI,
+profile czasu, DirectML, sposoby dodawania napisów, ustawienia CPU, biblioteki CUDA/cuDNN i GUI,
 deinstalator i zawartość ZIP-a,
 a dopiero potem publikuje pliki w Releases.
 
